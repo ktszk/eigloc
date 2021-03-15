@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def gencp(int p,int l,int m):
+    """
+    generate Gaunt coefficient
+    """
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
     def get_gaunt(p,m,l):
         return float(gaunt(3,p,3,-l,l-m,m))*np.sqrt(4.*np.pi/(2.*p+1.))*(-1)**l
@@ -17,6 +20,9 @@ def gencp(int p,int l,int m):
     return cp
 
 def UJ(F,int l=3):
+    """
+    generate onsite interaction U,J
+    """
     cdef long m1,m2,i,j,lmax=2*l+1
     cdef cnp.ndarray[cnp.float64_t,ndim=2] U,J
 
@@ -30,6 +36,9 @@ def UJ(F,int l=3):
 
 def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
           cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax):
+    """
+    calculate total/orbital/spin angular momentum J,L,S and generate magnetic dipole
+    """
     cdef long i,j,k,spp_flag,spm_flag,lp_flag,lm_flag,lz,tmp
     cdef double lpnum,lmnum,upsign,dnsign
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] Jx,Jy,Jz
@@ -118,6 +127,9 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
 
 def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
           cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax):
+    """
+    calculate electric and magnetic dipole
+    """
     #electric dipole_check
     cdef long i,j,l,l1,li,lj,j0,J,miz,mjz
     cdef double lzi,lzj
@@ -185,6 +197,9 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
 def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.float64_t,ndim=1] eig,
                  cnp.ndarray[cnp.complex128_t,ndim=2] eigf,cnp.ndarray[cnp.int64_t,ndim=2] instates,
                  cnp.ndarray[cnp.int64_t,ndim=2] sp1,int erange,double temp,double id=1.0e-3,int wmesh=2000):
+    """
+    generate spectrum
+    """
     cdef long eig_int_max=(np.where(eig<=2.*erange+eig[0])[0]).size
     cdef double[:] wlen=np.linspace(0,erange,wmesh)
     cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig
@@ -209,6 +224,9 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
 def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
                 cnp.ndarray[cnp.float64_t,ndim=2] J, F,
                 double temp=1.0e-9,double eps=1.0e-6,int itemax=1000,switch=True):
+    """
+    calculate MF hamiltonian with full Coulomb interactions
+    """
     cdef long i,j,k,l,m
     cdef double mu
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham, ham_I=np.zeros((ns,ns),dtype='c16')
@@ -266,6 +284,9 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
 def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float64_t,ndim=2] U,
             cnp.ndarray[cnp.float64_t,ndim=2] J, int ns,cnp.ndarray[cnp.float64_t,ndim=1] F,
             int l=3,sw_all_g=True,sw_ph=False):
+    """
+    get many-body hamiltonian
+    """
     cdef long i,j,j0,k,tmp,i0,i2,isgn,j2,jsgn,m1,m2,m3,m4
     cdef cnp.ndarray[cnp.int64_t,ndim=1] ist,jst,tmp1
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham=np.zeros((nwf,nwf),dtype='c16')
