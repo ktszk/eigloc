@@ -32,11 +32,11 @@ sub_num=111
 cf_type=1
 sw_F_type=0
 
-if sw_F_type in {0,1}:
+if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
 else:
-    try:
+    try: #if Up2,Up3 are not defined. generate these.
         Up2
         Up3
     except NameError:
@@ -72,8 +72,12 @@ erange=4.0
 #temp=1.0e02
 temp=2.6e-2 #~300K
 idelta=1.e-4
+compair_ham=False
 
 def get_F(F_type,E0,E1,E2,E3):
+    """
+    generate Slater-Condon parameteres
+    """
     if F_type==0:
         F=np.array([0.,1.*225,0.138*1089,0.0151*7361.64])*abs(E1)
         F[0]=abs(E0)
@@ -89,6 +93,9 @@ def get_F(F_type,E0,E1,E2,E3):
     return F
 
 def gen_hop():
+    """
+    import hopping parameters from QSGW
+    """
     def import_Hopping(fname):
         tmp=[f.split() for f in open(fname,'r')]
         tmp=sc.array([complex(float(tp[8]),float(tp[9])) for tp in tmp])
@@ -104,6 +111,9 @@ def gen_hop():
     return(hop)
 
 def gen_hop_free(zeta,Blm,sw_ls=True):
+    """
+    generate H_soc and H_cf
+    """
     #soc
     (B40,B60,B20,B66)=Blm
     mmax=.5*(ns//2-1)
@@ -220,6 +230,9 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
     return(ham-mu*np.identity(ns))
 
 def plot_hamHF(hop,U,J,F,temp=1.0e-9):
+    """
+    plot H_HF and compare H_HF and H_import
+    """
     if sw_full:
         ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,F,temp)
     else:
@@ -239,6 +252,9 @@ def plot_hamHF(hop,U,J,F,temp=1.0e-9):
     plt.show()
 
 def ham_conv(F0,Up,Up2,Up3,zeta,B40,B60,B20,B66):
+    """
+    self-consistent cycle to define parameters
+    """
     def func(x):
         (F0,Up,Up2,Up3,B4,B6,B2,B62)=tuple(x)
         if sw_conv_cf:
@@ -274,6 +290,9 @@ def ham_conv(F0,Up,Up2,Up3,zeta,B40,B60,B20,B66):
     return(F,Blm)
 
 def main():
+    """
+    main program of dia.py
+    """
     eV2cm=8.06554 #ev to 10e3cm^-1
     #eV2cm=1.
     if sw_conv:
@@ -290,11 +309,11 @@ def main():
     #check hoppings eig ned to devide 6:8 with soc
     (eig,eigf)=sl.eigh(hop)
     np.set_printoptions(linewidth=500)
-    print(hop.round(4))
+    #print(hop.round(4))
     #print(eig.round(4))
     U,J=get_ham.UJ(F)
-    plot_hamHF(hop,U,J,F)
-    #exit()
+    if compair_ham:
+        plot_hamHF(hop,U,J,F)
     nwf=scsp.comb(ns,ne,exact=True)
     instates=np.array(list(itts.combinations(range(ns),ne)))
     wf=np.zeros((nwf,ns),dtype=int)
