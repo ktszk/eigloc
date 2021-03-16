@@ -82,6 +82,13 @@ def get_F(F_type,E0,E1,E2,E3):
         F=np.array([0.,1.*225,0.138*1089,0.0151*7361.64])*abs(E1)
         F[0]=abs(E0)
     elif F_type==1:
+        #if Fn>=0, E2 and E3 have upper limit.
+        E2max=abs(E1)/70.
+        E3max=3.*abs(E1)/14.
+        if abs(E2)>E2max:
+            E2=E2max
+        if abs(E3)>E3max:
+            E3=E3max
         F=np.array([abs(E0)+9.*abs(E1)/7.,
                     75.*(abs(E1)+143.*abs(E2)+11.*abs(E3))/14.,
                     99.*(abs(E1)-130.*abs(E2)+4.*abs(E3))/7.,
