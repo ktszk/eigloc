@@ -11,15 +11,16 @@ import get_ham
 ns=14 #f-orbitals
 ne=6 #filling
 
-zeta= 0.191651
+#zeta= 0.191651
 
+F0p=0
 F0=12.55229
-Up= 5.30021e-2
-B40=1.92436e-3
-B60=3.91589e-5
+#Up= 5.30021e-2
+#B40=1.92436e-3
+#B60=3.91589e-5
 #Eu3+ ofelt
-#Up  = 0.04972
-#zeta= 0.16366
+Up  = 0.04972
+zeta= 0.16366
 #Tb3+ ofelt
 #Up  = 0.05381
 #zeta= 0.21139
@@ -65,7 +66,7 @@ else:
 sw_conv=False
 sw_conv_cf=True
 sw_full=True
-sw_spec=False
+sw_spec=True
 sp=np.array(['-3,1','-2,1','-1,1','0,1','1,1','2,1','3,1','-3,-1','-2,-1','-1,-1','0,-1','1,-1','2,-1','3,-1'])
 sp1=np.array([[-3,1],[-2,1],[-1,1],[0,1],[1,1],[2,1],[3,1],[-3,-1],[-2,-1],[-1,-1],[0,-1],[1,-1],[2,-1],[3,-1]])
 erange=4.0
@@ -236,12 +237,12 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
             print(new_n.round(3))
     return(ham-mu*np.identity(ns))
 
-def plot_hamHF(hop,U,J,F,temp=1.0e-9):
+def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
     """
     plot H_HF and compare H_HF and H_import
     """
     if sw_full:
-        ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,F,temp)
+        ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,temp)
     else:
         ham=get_HF(hop,U,J,temp)
     (eig,uni)=sl.eigh(ham)
@@ -258,12 +259,12 @@ def plot_hamHF(hop,U,J,F,temp=1.0e-9):
     plt.scatter([0]*ns,eig2-mu2,marker='_',color='red')
     plt.show()
 
-def ham_conv(F0,Up,Up2,Up3,zeta,B40,B60,B20,B66):
+def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
     """
     self-consistent cycle to define parameters
     """
     def func(x):
-        (F0,Up,Up2,Up3,B4,B6,B2,B62)=tuple(x)
+        (F0,F0p,Up,Up2,Up3,B4,B6,B2,B62)=tuple(x)
         if sw_conv_cf:
             Blm=(B4,B6,B2,B62)
         else:
@@ -271,8 +272,9 @@ def ham_conv(F0,Up,Up2,Up3,zeta,B40,B60,B20,B66):
         hop=gen_hop_free(zeta,Blm,False)
         F=get_F(sw_F_type,F0,Up,Up2,Up3)
         U,J=get_ham.UJ(F)
+        dU=get_ham.get_dU(F0p)
         if sw_full:
-            ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,F,switch=False)
+            ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,switch=False)
         else:
             ham=get_HF(hop,U,J,switch=False)
         hop2=gen_hop()
@@ -280,21 +282,21 @@ def ham_conv(F0,Up,Up2,Up3,zeta,B40,B60,B20,B66):
         (eig2,uni)=sl.eigh(hop2)
         de=abs((eig-eig[0])-(eig2-eig2[0])).sum()
         return de
-    x=[F0,Up,Up2,Up3,B40,B60,B20,B66]
+    x=[F0,F0p,Up,Up2,Up3,B40,B60,B20,B66]
     #minmethod='Nelder-Mead'
     minmethod='Powell'
     #minmethod='BFGS'
     optsol=scopt.minimize(func,x,method=minmethod)
     print(optsol)
-    (F01,Up1,Up21,Up31,B4,B6,B2,B62)=optsol.get('x')
-    print(F01.round(4),Up1.round(4),Up21.round(4),Up31.round(4),
+    (F01,F0p1,Up1,Up21,Up31,B4,B6,B2,B62)=optsol.get('x')
+    print(F0p1.round(4),F01.round(4),Up1.round(4),Up21.round(4),Up31.round(4),
           B4.round(4),B6.round(4),B2.round(4),B62.round(4))
     if sw_conv_cf:
         Blm=(B4,B6,B2,B62)
     else:
         Blm=(0,0,0,0)
     F=get_F(sw_F_type,F01,Up1,Up21,Up31)
-    return(F,Blm)
+    return(F,F0p1,Blm)
 
 def main():
     """
@@ -303,8 +305,9 @@ def main():
     eV2cm=8.06554 #ev to 10e3cm^-1
     #eV2cm=1.
     if sw_conv:
-        (F,Blm)=ham_conv(F0,Up,Up2,Up3,zeta,B40,B60,B20,B66)
+        (F,Fp,Blm)=ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66)
     else:
+        Fp=F0p
         F=get_F(sw_F_type,F0,Up,Up2,Up3)
         if sw_conv_cf:
             Blm=(B40,B60,B20,B66)

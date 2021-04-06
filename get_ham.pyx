@@ -4,6 +4,7 @@ cimport numpy as cnp
 from sympy.physics.wigner import gaunt
 import scipy.linalg as sl
 import scipy.optimize as scopt
+import scipy.constants as scconst
 import matplotlib.pyplot as plt
 
 @cython.boundscheck(False)
@@ -34,6 +35,15 @@ def UJ(F,int l=3):
     J=J-np.diag(J.diagonal())
     return U,J
 
+def get_dU(F0,int l=3):
+    cdef long m1,m2,i,j,lmax=2*l+1
+    cdef cnp.ndarray[cnp.float64_t,ndim=2] dU
+
+    cp=gencp(l+1,l,l)
+    dulm= lambda m1,m2: (F0*cp[m1,m1,0]*cp[m2,m2,0])
+    dU=np.array([[float(dulm(i,j)) for i in range(lmax)] for j in range(lmax)])
+    return dU
+
 def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
           cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax):
     """
@@ -42,7 +52,7 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     cdef long i,j,k,spp_flag,spm_flag,lp_flag,lm_flag,lz,tmp
     cdef double lpnum,lmnum,upsign,dnsign
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] Jx,Jy,Jz
-    cdef cnp.ndarray[cnp.float64_t,ndim=2] mag_specm,Lsq
+    cdef cnp.ndarray[cnp.float64_t,ndim=2] mag_specm,Lsq,Ssq
     cdef cnp.ndarray[cnp.int64_t] ist,jst,lflipp,lflipm,sflipp,sflipm
     cdef cnp.ndarray[cnp.int64_t,ndim=1] Lz0,Sz0
 
@@ -121,9 +131,13 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     Sz0=np.array([a[:,1].sum() for a in sp1[instates]])
     Jz=uni[:,:eigmax].T.conjugate().dot(np.diag(Lz0+Sz0).dot(uni[:,:eigmax]))
     #magnetic dipole
-    mag_spec=abs(Jx)**2+abs(Jy)**2+abs(Jz)**2
+    m0=1e10*scconst.hbar/(2.*scconst.c*scconst.m_e) #e\AA is unity
+    mag_spec=m0*m0*(abs(Jx)**2+abs(Jy)**2+abs(Jz)**2)
+    Ssq=.25*(Sp0+Sm0).dot(Sp0+Sm0)-.25*(Sp0-Sm0).dot(Sp0-Sm0)+.25*np.diag(Sz0)**2
+    eig,uni_s=sl.eigh(Ssq)
+    S_delta=uni_s.dot(uni_s.conjugate().T)
     Lsq=.25*(Lp0+Lm0).dot(Lp0+Lm0)-.25*(Lp0-Lm0).dot(Lp0-Lm0)+np.diag(Lz0)**2 #L^2
-    return mag_spec,Lsq,Lz0
+    return mag_spec,Lsq,Lz0,Ssq
 
 def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
           cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax):
@@ -135,10 +149,10 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     cdef double lzi,lzj
     cdef cnp.ndarray[cnp.int64_t] ist,jst
     cdef cnp.ndarray[cnp.int64_t,ndim=1] Lz0
-    cdef cnp.ndarray[cnp.float64_t,ndim=2] r_spec,Lsq
+    cdef cnp.ndarray[cnp.float64_t,ndim=2] r_spec,Lsq, Ssq
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] rp_mat,rm_mat,rz_mat,rx0,ry0,rz0,rx,ry,rz
 
-    mag_spec,Lsq,Lz0=get_J(wf,nwf,uni,instates,sp1,eigmax)
+    mag_spec,Lsq,Lz0,Ssq=get_J(wf,nwf,uni,instates,sp1,eigmax)
     print('calc mag dipole')
     eig,uni_l=sl.eigh(Lsq) #eigval of l^2(= l(l+1))
     Lz=uni_l.T.conjugate().dot(np.diag(Lz0).dot(uni_l))
@@ -164,29 +178,68 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
         blz=Lz[l1:l1+l,l1:l1+l].copy()
         elz,uni_lz=sl.eigh(blz)
         rot_mat[l1:l1+l,l1:l1+l]=uni_lz.copy()
-        #print(l1,l,l*l,blz.size)
-        #print(elz.round(6))
+        #print(elz.round(6),l)
         l1=l1+l
         Lz_size.extend(elz)
         L_size.extend((np.zeros(elz.size,dtype='i4')+J))
+    Lz_size=np.array(Lz_size)
+    L_size=np.array(L_size)
     uni_ll=uni_l.dot(rot_mat)
+    Ssq2=uni_ll.T.conjugate().dot(Ssq.dot(uni_ll))
+    l1=0
+    smat=[]
+    for l in lmat:
+        lz=Lz_size[l1:l1+l].round(2)
+        s1=0
+        for i in range(20):
+            s=np.where(lz==lz[s1])[0].size
+            s1=s1+s
+            smat.append(s)
+            if s1==lz.size:
+                break
+        l1=l1+l
+    rot_mat=np.zeros((nwf,nwf),dtype='c16')
+    s1=0
+    Ssq_size=[]
+    for s in smat:
+        bs=Ssq2[s1:s1+s,s1:s1+s].copy()
+        eig_s,uni_s=sl.eigh(bs)
+        rot_mat[s1:s1+s,s1:s1+s]=uni_s.copy()
+        #print(eig_s.round(6),s)
+        s1=s1+s
+        Ssq_size.extend(eig_s)
+    Ssq_size=np.array(Ssq_size)
+    uni_lls=uni_ll.dot(rot_mat)
+
+    ckuni=abs(uni[:,0].dot(uni_lls))**2
+    ck_phi=np.where(ckuni>1.e-3)[0]
+    f=open('ck_LS.txt','w')
+    for w,s,l in zip(ckuni[ck_phi],Ssq_size[ck_phi],L_size[ck_phi]):
+        f.write('weight=%5.3f,L=%4.1f,S(S+1)=%4.1f\n'%(w,l,s))
+    f.write('eig_200\n')
+    ckuni=abs(uni[:,200].dot(uni_lls))**2
+    ck_phi=np.where(ckuni>1.e-3)[0]
+    for w,s,l in zip(ckuni[ck_phi],Ssq_size[ck_phi],L_size[ck_phi]):
+        f.write('weight=%5.3f,L=%4.1f,S(S+1)=%4.1f\n'%(w,l,s))
+    f.close()
     rp_mat=np.zeros((nwf,nwf),dtype='c16')
     rm_mat=np.zeros((nwf,nwf),dtype='c16')
     rz_mat=np.zeros((nwf,nwf),dtype='c16')
-    for i,(li,lzj) in enumerate(zip(L_size,Lz_size)):
+    for i,(li,lzj,si) in enumerate(zip(L_size,Lz_size,Ssq_size)):
         miz=int(lzj)
-        for j0, (lj,lzj) in enumerate(zip(L_size[i:],Lz_size[i:])):
-            j=j0+i
-            mjz=int(lzj)
-            rp_mat[i,j]=complex(gaunt(lj,1,li,miz,1,mjz))*np.sqrt((2.*li+1.)*(2.*lj+1.)*3./(4.*np.pi))
-            rm_mat[i,j]=complex(gaunt(lj,1,li,miz,-1,mjz))*np.sqrt((2.*li+1.)*(2.*lj+1.)*3./(4.*np.pi))
-            rz_mat[i,j]=complex(gaunt(lj,1,li,miz,0,mjz))*np.sqrt((2.*li+1.)*(2.*lj+1.)*3./(4.*np.pi))
-            rp_mat[j,i]=rp_mat[i,j].conjugate()
-            rm_mat[j,i]=rm_mat[i,j].conjugate()
-            rz_mat[j,i]=rz_mat[i,j].conjugate()
-    rx0=uni_ll.dot((rm_mat-rp_mat).dot(uni_ll.T.conjugate()))/np.sqrt(2.)
-    ry0=1j*uni_ll.dot((rp_mat+rm_mat).dot(uni_ll.T.conjugate()))/np.sqrt(2.)
-    rz0=uni_ll.dot(rz_mat.dot(uni_ll.T.conjugate()))
+        for j0, (lj,lzj,sj) in enumerate(zip(L_size[i:],Lz_size[i:],Ssq_size[i:])):
+            if si==sj:
+                j=j0+i
+                mjz=int(lzj)
+                rp_mat[i,j]=complex(gaunt(lj,1,li,miz,1,mjz))
+                rm_mat[i,j]=complex(gaunt(lj,1,li,miz,-1,mjz))
+                rz_mat[i,j]=complex(gaunt(lj,1,li,miz,0,mjz))
+                rp_mat[j,i]=rp_mat[i,j].conjugate()
+                rm_mat[j,i]=rm_mat[i,j].conjugate()
+                rz_mat[j,i]=rz_mat[i,j].conjugate()
+    rx0=uni_lls.dot((rm_mat-rp_mat).dot(uni_lls.T.conjugate()))/np.sqrt(2.)
+    ry0=1j*uni_lls.dot((rp_mat+rm_mat).dot(uni_lls.T.conjugate()))/np.sqrt(2.)
+    rz0=uni_lls.dot(rz_mat.dot(uni_lls.T.conjugate()))
     rx=uni[:,:eigmax].T.conjugate().dot(rx0.dot(uni[:,:eigmax]))
     ry=uni[:,:eigmax].T.conjugate().dot(ry0.dot(uni[:,:eigmax]))
     rz=uni[:,:eigmax].T.conjugate().dot(rz0.dot(uni[:,:eigmax]))
@@ -201,14 +254,15 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     generate spectrum
     """
     cdef long eig_int_max=(np.where(eig<=2.*erange+eig[0])[0]).size
-    cdef double[:] wlen=np.linspace(0,erange,wmesh)
-    cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig
+    cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig,wlen=np.linspace(0,erange,wmesh)
     mnn2,mnn=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max)
     fig=plt.figure()
-    ax=fig.add_subplot(111)
-    maps=ax.imshow(mnn.round(3),cmap=plt.cm.jet,interpolation='nearest')
-    fig.colorbar(maps,ax=ax)
+    ax1=fig.add_subplot(211)
+    maps=ax1.imshow(mnn.round(3),cmap=plt.cm.jet,interpolation='nearest')
+    fig.colorbar(maps,ax=ax1)
     fig.savefig('mnn_map.png')
+    ax2=fig.add_subplot(212)
+    ax2.plot(range(eig_int_max),mnn[0,:])
     mnn=mnn.flatten()
     mnn2=mnn2.flatten()
     eig0=(eig-eig[0])[:eig_int_max]
@@ -222,7 +276,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     return wlen,chi,chi2
 
 def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
-                cnp.ndarray[cnp.float64_t,ndim=2] J, F,
+                cnp.ndarray[cnp.float64_t,ndim=2] J, cnp.ndarray[cnp.float64_t,ndim=2] dU, F,
                 double temp=1.0e-9,double eps=1.0e-6,int itemax=1000,switch=True):
     """
     calculate MF hamiltonian with full Coulomb interactions
@@ -239,9 +293,9 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
         for i in range(ns//2):
             # onsite
             ham_I[i,i]=((U[i,:]*n1.diagonal()[ns//2:]).sum()
-                          +np.delete((U[i,:]-J[i,:])*n1.diagonal()[:ns//2],i).sum())
+                          +np.delete((U[i,:]-J[i,:]+dU[i,:])*n1.diagonal()[:ns//2],i).sum())
             ham_I[i+ns//2,i+ns//2]=((U[i,:]*n1.diagonal()[:ns//2]).sum()
-                                      +np.delete((U[i,:]-J[i,:])*n1.diagonal()[ns//2:],i).sum())
+                                      +np.delete((U[i,:]-J[i,:]+dU[i,:])*n1.diagonal()[ns//2:],i).sum())
             for j in range(i+1,ns//2): #offsite
                 for l in range(ns//2):
                     m=l+i-j

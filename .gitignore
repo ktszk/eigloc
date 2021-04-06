@@ -31,5 +31,8 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
+*.pdf
+*.png
 
 output.txt
+ck_LS.txt
