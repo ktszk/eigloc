@@ -9,8 +9,7 @@ import get_ham
 #from numba import jit
 
 lorb=3
-ns=4*lorb+2 #f-orbitals
-ne=6 #filling
+ne=6 #electron filling
 
 #zeta= 0.191651
 
@@ -19,19 +18,28 @@ F0=12.55229
 #Up= 5.30021e-2
 #B40=1.92436e-3
 #B60=3.91589e-5
+
 #Eu3+ ofelt
 Up  = 0.04972
 zeta= 0.16366
 #Tb3+ ofelt
 #Up  = 0.05381
 #zeta= 0.21139
+
 #init_n=[1.,1.,1.,1.,1.,1.,0.,0.,0.,0.,0.,0.,0.,0.]
 init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
         0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
-sub_num=111
 
-cf_type=1
+cf_type=0
+erange=4.0
+idelta=1.e-4
+temp=2.6e-2 #~300K
+compair_ham=False
+sw_conv=False
+sw_conv_cf=True
+sw_full=True
+sw_spec=False
 sw_F_type=0
 
 if sw_F_type==0: #no use Up2,Up3
@@ -59,26 +67,18 @@ except NameError:
     B20=0.0
     B66=0.0
 
-if ne>ns:
-    print('too many electrons')
-    exit()
 if ne==6:
     n_fcs=49
 else:
     n_fcs=2
 
-sw_conv=False
-sw_conv_cf=True
-sw_full=True
-sw_spec=True
-sp=np.array(['-3,1','-2,1','-1,1','0,1','1,1','2,1','3,1','-3,-1','-2,-1','-1,-1','0,-1','1,-1','2,-1','3,-1'])
-sp1=np.array([[-3,1],[-2,1],[-1,1],[0,1],[1,1],[2,1],[3,1],[-3,-1],[-2,-1],[-1,-1],[0,-1],[1,-1],[2,-1],[3,-1]])
-erange=4.0
-#temp=1.0e02
-temp=2.6e-2 #~300K
-idelta=1.e-4
-compair_ham=False
-
+ns=4*lorb+2 #number of states
+sp1=np.array([[-lorb+l,1] for l in range(2*lorb+1)]
+             +[[-lorb+l,-1] for l in range(2*lorb+1)])
+sp=np.array(['%d,%d'%tuple(l) for l in sp1])
+if ne>ns:
+    print('too many electrons')
+    exit()
 def get_F(F_type,E0,E1,E2,E3):
     """
     generate Slater-Condon parameteres
@@ -144,51 +144,54 @@ def gen_hop_free(zeta,Blm,sw_ls=True):
     #cf
     if cf_type!=0:
         #make unitary matrix j2lm
-        uni=np.zeros((14,14))
-        for i in range(6):
-            uni[i,13-i]=np.sqrt(6.-i)
-            uni[i,5-i]=-np.sqrt(i+1.)
-        for i in range(7):
-            uni[i+7,13-i]=np.sqrt(i+1.)
-            uni[i+6,6-i]=np.sqrt(7.-i)
-        uni=uni/np.sqrt(7)
+        uni=np.zeros((ns,ns))
+        for i in range(2*lorb):
+            uni[i,4*lorb+1-i]=np.sqrt(2*lorb-i)
+            uni[i,2*lorb-1-i]=-np.sqrt(i+1.)
+        for i in range(ns//2):
+            uni[i+ns//2,ns-1-i]=np.sqrt(i+1.)
+            uni[i+2*lorb,2*lorb-i]=np.sqrt(ns/2-i)
+        uni=uni/np.sqrt(ns/2)
         #make Hcf from j basis stevens op.
-        if cf_type in {1,2}:
-            O4j=np.diag([ 1.,-3., 2., 2.,-3., 1., 7.,-13.,-3.,  9.,  9.,-3.,-13., 7.])
-            O6j=np.diag([ 0., 0., 0., 0., 0., 0.,1.,-5.,9.,-5.,-5.,9.,-5.,1.])
-        if cf_type==1:
-            #O44,j5/2
-            O4j[0,4]=np.sqrt(5.)
-            O4j[4,0]=O4j[0,4]
-            O4j[1,5]=O4j[0,4]
-            O4j[5,1]=O4j[1,5]
-            #O44,j7/2
-            O4j[6,10]=np.sqrt(35.)
-            O4j[10,6]=O4j[6,10]
-            O4j[13,9]=O4j[6,10]
-            O4j[9,13]=O4j[13,9]
-            O4j[7,11]=5.*np.sqrt(3)
-            O4j[11,7]=O4j[7,11]
-            O4j[8,12]=O4j[7,11]
-            O4j[12,8]=O4j[8,12]
-            #O64,j7/2
-            O6j[6,10]=-3.*np.sqrt(35.)
-            O6j[10,6]=O6j[6,10]
-            O6j[13,9]=O6j[6,10]
-            O6j[9,13]=O6j[13,9]
-            O6j[7,11]=7.*np.sqrt(3)
-            O6j[11,7]=O6j[7,11]
-            O6j[8,12]=O6j[7,11]
-            O6j[12,8]=O6j[8,12]
-            hopcf=uni.T.conjugate().dot((B40*O4j+21.*B60*O6j).dot(uni))
-        elif cf_type==2:
-            O2j=np.diag([10.,-2.,-8.,-8.,-2.,10.,21.,3.,-9.,-15.,-15.,-9.,3.,21.])
-            O66j=np.zeros((ns,ns))
-            O66j[6,12]=np.sqrt(7.)
-            O66j[12,6]=O66j[6,12]
-            O66j[7,13]=O66j[6,12]
-            O66j[13,7]=O66j[7,13]
-            hopcf=uni.T.conjugate().dot((B20*O2j/60.+B40*O4j+21.*B60*O6j+4.*B66*O66j).dot(uni))
+        if lorb==3:
+            if cf_type in {1,2}:
+                O4j=np.diag([ 1.,-3., 2., 2.,-3., 1., 7.,-13.,-3.,  9.,  9.,-3.,-13., 7.])
+                O6j=np.diag([ 0., 0., 0., 0., 0., 0.,1.,-5.,9.,-5.,-5.,9.,-5.,1.])
+            if cf_type==1:
+                #O44,j5/2
+                O4j[0,4]=np.sqrt(5.)
+                O4j[4,0]=O4j[0,4]
+                O4j[1,5]=O4j[0,4]
+                O4j[5,1]=O4j[1,5]
+                #O44,j7/2
+                O4j[6,10]=np.sqrt(35.)
+                O4j[10,6]=O4j[6,10]
+                O4j[13,9]=O4j[6,10]
+                O4j[9,13]=O4j[13,9]
+                O4j[7,11]=5.*np.sqrt(3)
+                O4j[11,7]=O4j[7,11]
+                O4j[8,12]=O4j[7,11]
+                O4j[12,8]=O4j[8,12]
+                #O64,j7/2
+                O6j[6,10]=-3.*np.sqrt(35.)
+                O6j[10,6]=O6j[6,10]
+                O6j[13,9]=O6j[6,10]
+                O6j[9,13]=O6j[13,9]
+                O6j[7,11]=7.*np.sqrt(3)
+                O6j[11,7]=O6j[7,11]
+                O6j[8,12]=O6j[7,11]
+                O6j[12,8]=O6j[8,12]
+                hopcf=uni.T.conjugate().dot((B40*O4j+21.*B60*O6j).dot(uni))
+            elif cf_type==2:
+                O2j=np.diag([10.,-2.,-8.,-8.,-2.,10.,21.,3.,-9.,-15.,-15.,-9.,3.,21.])
+                O66j=np.zeros((ns,ns))
+                O66j[6,12]=np.sqrt(7.)
+                O66j[12,6]=O66j[6,12]
+                O66j[7,13]=O66j[6,12]
+                O66j[13,7]=O66j[7,13]
+                hopcf=uni.T.conjugate().dot((B20*O2j/60.+B40*O4j+21.*B60*O6j+4.*B66*O66j).dot(uni))
+        elif lorb==2:
+            hopcf=np.zeros((ns,ns))
         hop=hopsoc+hopcf
         #print(hopcf.round(3))
     else:
@@ -348,7 +351,7 @@ def main():
     (eig,eigf)=sl.eigh(ham)
     eigmax=(np.where(eig<=erange+eig[0])[0]).size
     if sw_spec:
-        wlen,chi,chi2=get_ham.get_spectrum(nwf,wf,eig,eigf,instates,sp1,erange,temp,idelta)
+        wlen,chi,chi2=get_ham.get_spectrum(nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,idelta)
         figs=plt.figure()
         ax1=figs.add_subplot(211)
         ax1.plot(wlen,chi)
@@ -408,9 +411,10 @@ def main():
                             27.263,27.659,28.365,28.960,29.411, #5GJ (J:6>2)
                             30.953,32.713,32.995,34.107,34.414]) #5HJ (J:7>3)
     else:
-        eig_ofelt=np.array([0])
-    print(eig_ofelt.round(4))
-    plt.scatter(eig_ofelt*0,eig_ofelt,marker='_',color='red')
+        pass
+    if ne in {6,8}:
+        print(eig_ofelt.round(4))
+        plt.scatter(eig_ofelt*0,eig_ofelt,marker='_',color='red')
     plt.xlim(-0.05,0.05)
     plt.ylim(0,erange*eV2cm)
     plt.show()

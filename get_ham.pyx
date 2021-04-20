@@ -13,9 +13,10 @@ def gencp(int p,int l,int m):
     """
     generate Gaunt coefficient
     """
+    lmax=p-1
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
     def get_gaunt(p,m,l):
-        return float(gaunt(3,p,3,-l,l-m,m))*np.sqrt(4.*np.pi/(2.*p+1.))*(-1)**l
+        return float(gaunt(lmax,p,lmax,-l,l-m,m))*np.sqrt(4.*np.pi/(2.*p+1.))*(-1)**l
     cp=np.array([[[get_gaunt(2*pp,ll-l,mm-l) for pp in range(p)] 
                   for mm in range(2*m+1)] for ll in range(2*l+1)])
     return cp
@@ -45,7 +46,7 @@ def get_dU(F0,int l=3):
     return dU
 
 def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
-          cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax):
+          cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax,int lmax=3):
     """
     calculate total/orbital/spin angular momentum J,L,S and generate magnetic dipole
     """
@@ -58,7 +59,7 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
 
     cdef cnp.ndarray[cnp.float64_t,ndim=2] Lp0=np.zeros((nwf,nwf)),Lm0=np.zeros((nwf,nwf))
     cdef cnp.ndarray[cnp.float64_t,ndim=2] Sp0=np.zeros((nwf,nwf)),Sm0=np.zeros((nwf,nwf))
-    cdef lmax=3, nhf=int(len(sp1)//2)
+    cdef nhf=int(len(sp1)//2)
 
     #J+,J-
     for i,ist in enumerate(wf):
@@ -140,7 +141,7 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     return mag_spec,Lsq,Lz0,Ssq
 
 def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
-          cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax):
+          cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax,int lorb):
     """
     calculate electric and magnetic dipole
     """
@@ -152,7 +153,7 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     cdef cnp.ndarray[cnp.float64_t,ndim=2] r_spec,Lsq, Ssq
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] rp_mat,rm_mat,rz_mat,rx0,ry0,rz0,rx,ry,rz
 
-    mag_spec,Lsq,Lz0,Ssq=get_J(wf,nwf,uni,instates,sp1,eigmax)
+    mag_spec,Lsq,Lz0,Ssq=get_J(wf,nwf,uni,instates,sp1,eigmax,lorb)
     print('calc mag dipole')
     eig,uni_l=sl.eigh(Lsq) #eigval of l^2(= l(l+1))
     Lz=uni_l.T.conjugate().dot(np.diag(Lz0).dot(uni_l))
@@ -249,13 +250,14 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
 
 def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.float64_t,ndim=1] eig,
                  cnp.ndarray[cnp.complex128_t,ndim=2] eigf,cnp.ndarray[cnp.int64_t,ndim=2] instates,
-                 cnp.ndarray[cnp.int64_t,ndim=2] sp1,int erange,double temp,double id=1.0e-3,int wmesh=2000):
+                 cnp.ndarray[cnp.int64_t,ndim=2] sp1,int erange,double temp, int lorb, 
+                 double id=1.0e-3,int wmesh=2000):
     """
     generate spectrum
     """
     cdef long eig_int_max=(np.where(eig<=2.*erange+eig[0])[0]).size
     cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig,wlen=np.linspace(0,erange,wmesh)
-    mnn2,mnn=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max)
+    mnn2,mnn=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb)
     fig=plt.figure()
     ax1=fig.add_subplot(211)
     maps=ax1.imshow(mnn.round(3),cmap=plt.cm.jet,interpolation='nearest')
