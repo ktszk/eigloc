@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 import get_ham
 #from numba import jit
 
-ns=14 #f-orbitals
+lorb=3
+ns=4*lorb+2 #f-orbitals
 ne=6 #filling
 
 #zeta= 0.191651
@@ -58,6 +59,9 @@ except NameError:
     B20=0.0
     B66=0.0
 
+if ne>ns:
+    print('too many electrons')
+    exit()
 if ne==6:
     n_fcs=49
 else:
@@ -192,6 +196,9 @@ def gen_hop_free(zeta,Blm,sw_ls=True):
     return(hop)
 
 def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
+    """
+    obtain H_HF corresponding to many body hamiltonian
+    """
     ini_n=np.array(init_n)
     n1=np.diag(ini_n)
     for k in range(itemax):
@@ -242,21 +249,22 @@ def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
     plot H_HF and compare H_HF and H_import
     """
     if sw_full:
-        ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,temp)
+        ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,temp,lorb=lorb)
     else:
         ham=get_HF(hop,U,J,temp)
     (eig,uni)=sl.eigh(ham)
     #print(ham.round(3))
     print((eig).round(3))
-    hop2=gen_hop()
-    #print(hop2.real.round(2))
-    (eig2,uni)=sl.eigh(hop2)
-    f2=lambda mu: ne+.5*(np.tanh(0.5*(eig2-mu)/temp)-1.).sum()
-    mu2=scopt.brentq(f2,eig2.min(),eig2.max())
-    print((eig2-mu2).round(3))
-    #print((uni**2).round(3))
     plt.scatter([0]*ns,eig,marker='_')
-    plt.scatter([0]*ns,eig2-mu2,marker='_',color='red')
+    if True:
+        hop2=gen_hop()
+        print(hop2.real.round(2))
+        (eig2,uni)=sl.eigh(hop2)
+        f2=lambda mu: ne+.5*(np.tanh(0.5*(eig2-mu)/temp)-1.).sum()
+        mu2=scopt.brentq(f2,eig2.min(),eig2.max())
+        print((eig2-mu2).round(3))
+        print((uni**2).round(3))
+        plt.scatter([0]*ns,eig2-mu2,marker='_',color='red')
     plt.show()
 
 def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
@@ -271,7 +279,7 @@ def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
             Blm=(0,0,0,0)    
         hop=gen_hop_free(zeta,Blm,False)
         F=get_F(sw_F_type,F0,Up,Up2,Up3)
-        U,J=get_ham.UJ(F)
+        U,J=get_ham.UJ(F,lorb)
         dU=get_ham.get_dU(F0p)
         if sw_full:
             ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,switch=False)
@@ -321,9 +329,10 @@ def main():
     np.set_printoptions(linewidth=500)
     #print(hop.round(4))
     #print(eig.round(4))
-    U,J=get_ham.UJ(F)
+    U,J=get_ham.UJ(F,lorb)
+    dU=get_ham.get_dU(Fp)
     if compair_ham:
-        plot_hamHF(hop,U,J,F)
+        plot_hamHF(hop,U,J,dU,F)
     nwf=scsp.comb(ns,ne,exact=True)
     instates=np.array(list(itts.combinations(range(ns),ne)))
     wf=np.zeros((nwf,ns),dtype=int)
@@ -332,7 +341,7 @@ def main():
     np.set_printoptions(linewidth=300)
     #print(wf)
 
-    ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F)
+    ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F,l=lorb)
     #plt.spy(abs(ham))
     #plt.show()
     #print(ham)

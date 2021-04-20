@@ -28,8 +28,8 @@ def UJ(F,int l=3):
     cdef cnp.ndarray[cnp.float64_t,ndim=2] U,J
 
     cp=gencp(l+1,l,l)
-    Ulm=lambda m1,m2: (F*cp[m1,m1]*cp[m2,m2]).sum()
-    Jlm=lambda m1,m2: (F*cp[m1,m2]**2).sum()
+    Ulm=lambda m1,m2: (F[:l+1]*cp[m1,m1]*cp[m2,m2]).sum()
+    Jlm=lambda m1,m2: (F[:l+1]*cp[m1,m2]**2).sum()
     U=np.array([[float(Ulm(i,j)) for i in range(lmax)] for j in range(lmax)])
     J=np.array([[float(Jlm(i,j)) for i in range(lmax)] for j in range(lmax)])
     J=J-np.diag(J.diagonal())
@@ -277,15 +277,15 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
 
 def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
                 cnp.ndarray[cnp.float64_t,ndim=2] J, cnp.ndarray[cnp.float64_t,ndim=2] dU, F,
-                double temp=1.0e-9,double eps=1.0e-6,int itemax=1000,switch=True):
+                double temp=1.0e-9,double eps=1.0e-6,int itemax=1000,switch=True,lorb=3):
     """
     calculate MF hamiltonian with full Coulomb interactions
     """
     cdef long i,j,k,l,m
     cdef double mu
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham, ham_I=np.zeros((ns,ns),dtype='c16')
-    cp=gencp(4,3,3)
-    G=lambda m1,m2,m3,m4:(-1)**abs(m1-m3)*(F*cp[m1,m3]*cp[m2,m4]).sum()
+    cp=gencp(lorb+1,3,3)
+    G=lambda m1,m2,m3,m4:(-1)**abs(m1-m3)*(F[:lorb+1]*cp[m1,m3]*cp[m2,m4]).sum()
     ini_n=np.array(init_n)
     n1=np.diag(ini_n)
     for k in range(itemax):
@@ -404,10 +404,10 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float
                             m2=m2-ns//2
                         if((m1+m2-(m3+m4))==0): #delta(m1+m2,m3+m4)
                             if(abs(tmp1[:ns//2]).sum()==2): #spin anti-parallel
-                                G=(-1)**abs(m1-m3)*(F*cp[m1,m3]*cp[m2,m4]).sum()
+                                G=(-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
                             else: #spin parallel
-                                G=((-1)**abs(m1-m3)*(F*cp[m1,m3]*cp[m2,m4]).sum()
-                                   -(-1)**abs(m2-m3)*(F*cp[m2,m3]*cp[m1,m4]).sum())
+                                G=((-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
+                                   -(-1)**abs(m2-m3)*(F[:l+1]*cp[m2,m3]*cp[m1,m4]).sum())
                                 #print(m1,m2,m4,m3,G.round(4))
                             ham[i,j]=G*sgn
             ham[j,i]=ham[i,j].conjugate()
