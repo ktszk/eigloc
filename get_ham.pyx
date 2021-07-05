@@ -1,3 +1,4 @@
+# cython: profile=True
 import numpy as np
 cimport cython
 cimport numpy as cnp
@@ -49,6 +50,15 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
           cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax,int lmax=3):
     """
     calculate total/orbital/spin angular momentum J,L,S and generate magnetic dipole
+    details of argments
+    ---------------------
+    wf:initial basis of wave functions
+    nwf: number of basis
+    uni: eigen functions of multibody hamiltonian
+    instates: details of wf (setting of electrons in wf)
+    sp1: instates label
+    eigmax: maximum value of eigenvalues to be considered
+    lmax: maximum angular momentum of one body electron
     """
     cdef long i,j,k,spp_flag,spm_flag,lp_flag,lm_flag,lz,tmp
     cdef double lpnum,lmnum,upsign,dnsign
@@ -65,7 +75,8 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     for i,ist in enumerate(wf):
         for k in np.where(ist==1)[0]:
             lz=sp1[k][0]
-            if lz!=3 and ist[k+1]==0:
+            if lz!=lmax and ist[k+1]==0:
+                #lz>lz+1 setting
                 lpnum=np.sqrt((lmax-lz)*(lmax+lz+1.))
                 lflipp=ist.copy()
                 lflipp[k]=0
@@ -73,7 +84,8 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
                 lp_flag=1
             else:
                 lp_flag=0
-            if lz!=-3 and ist[k-1]==0:
+            if lz!=-lmax and ist[k-1]==0:
+                #lz>lz-1 setting
                 lmnum=np.sqrt((lmax+lz)*(lmax-lz+1.))
                 lflipm=ist.copy()
                 lflipm[k]=0
@@ -82,6 +94,7 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
             else:
                 lm_flag=0
             if k<nhf:
+                #spin flip u>d setting
                 if ist[k+nhf]==0:
                     sflipm=ist.copy()
                     sflipm[k]=0
@@ -92,6 +105,7 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
                     spm_flag=0
                 spp_flag=0
             else:
+                #spin flip d>u setting
                 if ist[k-nhf]==0:
                     sflipp=ist.copy()
                     sflipp[k]=0
@@ -125,11 +139,15 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
                             spm_flag=0
                     if (spp_flag+spm_flag+lp_flag+lm_flag)==0:
                         break
-    Jx=uni[:,:eigmax].T.conjugate().dot((.5*(Lp0+Lm0+2.*(Sp0+Sm0))).dot(uni[:,:eigmax]))
-    Jy=uni[:,:eigmax].T.conjugate().dot((-.5j*(Lp0-Lm0+2.*(Sp0-Sm0))).dot(uni[:,:eigmax]))
-    #Jz
     Lz0=np.array([a[:,0].sum() for a in sp1[instates]])
     Sz0=np.array([a[:,1].sum() for a in sp1[instates]])
+
+    #obtain J of eigenvalues
+    Jsq=.25*(Lp0+Lm0+(Sp0+Sm0)).dot(Lp0+Lm0+(Sp0+Sm0))-.25*(Lp0-Lm0+(Sp0-Sm0)).dot(Lp0-Lm0+(Sp0-Sm0))+np.diag(Lz0+.5*Sz0)**2
+    Jeig=np.diagonal(uni[:,:eigmax].T.conjugate().dot(Jsq.dot(uni[:,:eigmax]))).real
+
+    Jx=uni[:,:eigmax].T.conjugate().dot((.5*(Lp0+Lm0+2.*(Sp0+Sm0))).dot(uni[:,:eigmax]))
+    Jy=uni[:,:eigmax].T.conjugate().dot((-.5j*(Lp0-Lm0+2.*(Sp0-Sm0))).dot(uni[:,:eigmax]))
     Jz=uni[:,:eigmax].T.conjugate().dot(np.diag(Lz0+Sz0).dot(uni[:,:eigmax]))
     #magnetic dipole
     m0=1e10*scconst.hbar/(2.*scconst.c*scconst.m_e) #e\AA is unity
@@ -138,105 +156,134 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     eig,uni_s=sl.eigh(Ssq)
     S_delta=uni_s.dot(uni_s.conjugate().T)
     Lsq=.25*(Lp0+Lm0).dot(Lp0+Lm0)-.25*(Lp0-Lm0).dot(Lp0-Lm0)+np.diag(Lz0)**2 #L^2
-    return mag_spec,Lsq,Lz0,Ssq
+    return mag_spec,Lsq,Lz0,Ssq,Jsq,.5*(np.sqrt(1.+4.*Jeig)-1.).round(2)
 
 def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
           cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax,int lorb):
     """
     calculate electric and magnetic dipole
+    details of argments
+    ---------------------
+    wf:initial basis of wave functions
+    nwf: number of basis
+    uni: eigen functions of multibody hamiltonian
+    instates: details of wf (setting of electrons in wf)
+    sp1: instates label
+    eigmax: maximum value of eigenvalues to be considered
+    lorb: maximum angular momentum of one body electron     
     """
     #electric dipole_check
     cdef long i,j,l,l1,li,lj,j0,J,miz,mjz
-    cdef double lzi,lzj
     cdef cnp.ndarray[cnp.int64_t] ist,jst
     cdef cnp.ndarray[cnp.int64_t,ndim=1] Lz0
     cdef cnp.ndarray[cnp.float64_t,ndim=2] r_spec,Lsq, Ssq
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] rp_mat,rm_mat,rz_mat,rx0,ry0,rz0,rx,ry,rz
 
-    mag_spec,Lsq,Lz0,Ssq=get_J(wf,nwf,uni,instates,sp1,eigmax,lorb)
+    #obtain J,L,S
+    mag_spec,Lsq,Lz0,Ssq,Jsq,Jeig=get_J(wf,nwf,uni,instates,sp1,eigmax,lorb)
     print('calc mag dipole')
+    # L       0   1   2   3   4   5   6   7   8   9  10  11  12
+    L_label=['S','P','D','F','G','H','I','K','L','M','N','O','Q'] #wo J
     eig,uni_l=sl.eigh(Lsq) #eigval of l^2(= l(l+1))
-    Lz=uni_l.T.conjugate().dot(np.diag(Lz0).dot(uni_l))
-    LL=np.array([i*(i+1) for i in range(20)])
+    L_size=(0.5*(np.sqrt(1.+4.*eig)-1.)).round(2).astype(np.int64)
+    Ssq2=uni_l.T.conjugate().dot(Ssq.dot(uni_l))
+
+    #obtain <i|r|j>
     l1=0
-    JJ=[]
     lmat=[]
-    for i in range(20):
+    for i in range(200):
         l=np.where(eig.round(2)==eig.round(2)[l1])[0].size
         l1=l1+l
         lmat.append(l)
-        e0=int(eig[l1-1])
-        for j,j2 in enumerate(LL):
-            if e0==j2:
-                JJ.append(j)
         if l1==eig.size:
             break
     rot_mat=np.zeros((nwf,nwf),dtype='c16')
+
     l1=0
-    Lz_size=[]
-    L_size=[]
-    for l,J in zip(lmat,JJ):
-        blz=Lz[l1:l1+l,l1:l1+l].copy()
-        elz,uni_lz=sl.eigh(blz)
-        rot_mat[l1:l1+l,l1:l1+l]=uni_lz.copy()
-        #print(elz.round(6),l)
+    S_size=[]
+    for l in lmat:
+        bs=Ssq2[l1:l1+l,l1:l1+l].copy()
+        essq,uni_ssq=sl.eigh(bs)
+        rot_mat[l1:l1+l,l1:l1+l]=uni_ssq.copy()
         l1=l1+l
-        Lz_size.extend(elz)
-        L_size.extend((np.zeros(elz.size,dtype='i4')+J))
-    Lz_size=np.array(Lz_size)
-    L_size=np.array(L_size)
-    uni_ll=uni_l.dot(rot_mat)
-    Ssq2=uni_ll.T.conjugate().dot(Ssq.dot(uni_ll))
+        S_size.extend(.5*(np.sqrt(1.+4.*essq)-1.))
+    S_size=np.array(S_size).round(2)
+    uni_ls=uni_l.dot(rot_mat)
+    Jsq2=uni_ls.T.conjugate().dot(Jsq.dot(uni_ls))
+    Lz=uni_ls.T.conjugate().dot(np.diag(Lz0).dot(uni_ls))
+
     l1=0
     smat=[]
     for l in lmat:
-        lz=Lz_size[l1:l1+l].round(2)
+        SS=S_size[l1:l1+l].round(2)
         s1=0
-        for i in range(20):
-            s=np.where(lz==lz[s1])[0].size
+        for i in range(200):
+            s=np.where(SS==SS[s1])[0].size
             s1=s1+s
             smat.append(s)
-            if s1==lz.size:
+            if s1==SS.size:
                 break
         l1=l1+l
-    rot_mat=np.zeros((nwf,nwf),dtype='c16')
-    s1=0
-    Ssq_size=[]
-    for s in smat:
-        bs=Ssq2[s1:s1+s,s1:s1+s].copy()
-        eig_s,uni_s=sl.eigh(bs)
-        rot_mat[s1:s1+s,s1:s1+s]=uni_s.copy()
-        #print(eig_s.round(6),s)
-        s1=s1+s
-        Ssq_size.extend(eig_s)
-    Ssq_size=np.array(Ssq_size)
-    uni_lls=uni_ll.dot(rot_mat)
 
-    ckuni=abs(uni[:,0].dot(uni_lls))**2
-    ck_phi=np.where(ckuni>1.e-3)[0]
+    rot_mat=np.zeros((nwf,nwf),dtype='c16')
+    rot_J=np.zeros((nwf,nwf),dtype='c16')
+    s1=0
+    J_size=[]
+    Lz_size=[]
+    for s in smat:
+        blz=Lz[s1:s1+s,s1:s1+s].copy()
+        eig_lz,uni_lz=sl.eigh(blz)
+        rot_mat[s1:s1+s,s1:s1+s]=uni_lz.copy()
+        bj=Jsq2[s1:s1+s,s1:s1+s].copy()
+        eig_j,uni_j=sl.eigh(bj)
+        rot_J[s1:s1+s,s1:s1+s]=uni_j.copy()
+        #print(eig_lz.round(6),s)
+        #print(eig_j.round(6),s)
+        s1=s1+s
+        Lz_size.extend(eig_lz.round(2))
+        J_size.extend(.5*(np.sqrt(1.+4.*eig_j)-1.))
+    Lz_size=np.array(Lz_size,dtype=np.int64)
+    J_size=np.array(J_size).round(2)
+    uni_lls=uni_ls.dot(rot_mat)
+    uni_J=uni_ls.dot(rot_J)
+
+    RSuni=abs(uni[:,:eigmax].T.dot(uni_J))**2
+    Lu=np.unique(L_size)
+    Su=np.unique(S_size)
+    Ju=np.unique(J_size)
     f=open('ck_LS.txt','w')
-    for w,s,l in zip(ckuni[ck_phi],Ssq_size[ck_phi],L_size[ck_phi]):
-        f.write('weight=%5.3f,L=%4.1f,S(S+1)=%4.1f\n'%(w,l,s))
-    f.write('eig_200\n')
-    ckuni=abs(uni[:,200].dot(uni_lls))**2
-    ck_phi=np.where(ckuni>1.e-3)[0]
-    for w,s,l in zip(ckuni[ck_phi],Ssq_size[ck_phi],L_size[ck_phi]):
-        f.write('weight=%5.3f,L=%4.1f,S(S+1)=%4.1f\n'%(w,l,s))
+    for i,(ckuni,Je) in enumerate(zip(RSuni,Jeig)):
+        LSW=[]
+        for Li in Lu:
+            for Si in Su:
+                for Ji in Ju:
+                    Lcu=ckuni[np.where(L_size==Li)[0]]
+                    Sl=S_size[np.where(L_size==Li)[0]]
+                    Jl=J_size[np.where(L_size==Li)[0]]
+                    Scu=Lcu[np.where(Sl==Si)[0]]
+                    Jls=Jl[np.where(Sl==Si)[0]]
+                    LS_Weight=Scu[np.where(Jls==Ji)[0]].sum().round(3)
+                    if LS_Weight>1.e-2:
+                        RS=('^(%d)%s_%3.1f'%(2*Si+1,L_label[Li],abs(Ji)) if (2*Ji%2!=0) 
+                            else '^(%d)%s_%d'%(2*Si+1,L_label[Li],abs(Ji)))
+                        LSW.append([RS,LS_Weight])
+        f.write('eig_number %d,J=%4.1f\n'%(i,Je))
+        for lw in LSW:
+            f.write('%s: %4.2f, '%tuple(lw))
+        f.write('\n')
     f.close()
     rp_mat=np.zeros((nwf,nwf),dtype='c16')
     rm_mat=np.zeros((nwf,nwf),dtype='c16')
     rz_mat=np.zeros((nwf,nwf),dtype='c16')
-    for i,(li,lzj,si) in enumerate(zip(L_size,Lz_size,Ssq_size)):
-        miz=int(lzj)
-        for j0, (lj,lzj,sj) in enumerate(zip(L_size[i:],Lz_size[i:],Ssq_size[i:])):
-            if si==sj:
+    for i,(li,miz,si) in enumerate(zip(L_size,Lz_size,S_size)):
+        for j0, (lj,mjz,sj) in enumerate(zip(L_size[i:],Lz_size[i:],S_size[i:])):
+            if abs(si-sj)<1e-3 and abs(li-lj)==1:
                 j=j0+i
-                mjz=int(lzj)
                 rp_mat[i,j]=complex(gaunt(lj,1,li,miz,1,mjz))
                 rm_mat[i,j]=complex(gaunt(lj,1,li,miz,-1,mjz))
                 rz_mat[i,j]=complex(gaunt(lj,1,li,miz,0,mjz))
-                rp_mat[j,i]=rp_mat[i,j].conjugate()
-                rm_mat[j,i]=rm_mat[i,j].conjugate()
+                rp_mat[j,i]=-rm_mat[i,j].conjugate()
+                rm_mat[j,i]=-rp_mat[i,j].conjugate()
                 rz_mat[j,i]=rz_mat[i,j].conjugate()
     rx0=uni_lls.dot((rm_mat-rp_mat).dot(uni_lls.T.conjugate()))/np.sqrt(2.)
     ry0=1j*uni_lls.dot((rp_mat+rm_mat).dot(uni_lls.T.conjugate()))/np.sqrt(2.)
@@ -246,7 +293,7 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     rz=uni[:,:eigmax].T.conjugate().dot(rz0.dot(uni[:,:eigmax]))
     r_spec=abs(rx)**2+abs(ry)**2+abs(rz)**2
     print('calc elec dipole')
-    return mag_spec,r_spec
+    return mag_spec,r_spec,Jeig
 
 def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.float64_t,ndim=1] eig,
                  cnp.ndarray[cnp.complex128_t,ndim=2] eigf,cnp.ndarray[cnp.int64_t,ndim=2] instates,
@@ -257,7 +304,10 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     """
     cdef long eig_int_max=(np.where(eig<=2.*erange+eig[0])[0]).size
     cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig,wlen=np.linspace(0,erange,wmesh)
-    mnn2,mnn=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb)
+
+
+    rsq=0.4376**2
+    mnn2,mnn,Jeig=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb)
     fig=plt.figure()
     ax1=fig.add_subplot(211)
     maps=ax1.imshow(mnn.round(3),cmap=plt.cm.jet,interpolation='nearest')
@@ -273,9 +323,9 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     eigf0=eigf.T[:eig_int_max]
     deig=np.array([[e1-e2 for e1 in eig0] for e2 in eig0]).flatten()
     dfunc=np.array([[e2-e1 for e1 in func] for e2 in func]).flatten()
-    chi=np.array([(mnn*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
+    chi=rsq*np.array([(mnn*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
     chi2=np.array([(mnn2*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
-    return wlen,chi,chi2
+    return wlen,chi,chi2,Jeig
 
 def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
                 cnp.ndarray[cnp.float64_t,ndim=2] J, cnp.ndarray[cnp.float64_t,ndim=2] dU, F,
@@ -286,7 +336,7 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
     cdef long i,j,k,l,m
     cdef double mu
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham, ham_I=np.zeros((ns,ns),dtype='c16')
-    cp=gencp(lorb+1,3,3)
+    cp=gencp(lorb+1,lorb,lorb)
     G=lambda m1,m2,m3,m4:(-1)**abs(m1-m3)*(F[:lorb+1]*cp[m1,m3]*cp[m2,m4]).sum()
     ini_n=np.array(init_n)
     n1=np.diag(ini_n)
@@ -373,21 +423,21 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float
                             jsgn=-1
                         if isgn*jsgn==1: #spin parallel
                             ham[i,i]=ham[i,i]+U[j2,i2]-J[j2,i2]
-                        else:
+                        else: #spin anti parallel
                             ham[i,i]=ham[i,i]+U[j2,i2]
-            elif(tmp==2): #hoppings
+            elif(tmp==2): #hoppings one body
                 tmp1=ist-jst
                 j2=np.where(tmp1==-1)[0][0]
                 i2=np.where(tmp1==1)[0][0]
                 sgn=(-1)**(jst[:j2].sum()+ist[:i2].sum())
                 ham[i,j]=sgn*hop[i2,j2]
-            elif(tmp==4): #four operators
+            elif(tmp==4): #four operators two body
                 tmp1=ist-jst
                 if(tmp1[:ns//2].sum()==0): #spin conservation
-                    m3=np.where(tmp1==-1)[0][0] #1st one
-                    m4=np.where(tmp1==-1)[0][1] #2nd one
-                    m1=np.where(tmp1==1)[0][0]  #1st one
-                    m2=np.where(tmp1==1)[0][1]  #2nd one
+                    m3=np.where(tmp1==-1)[0][0] #1st one anihilate
+                    m4=np.where(tmp1==-1)[0][1] #2nd one anihilate
+                    m1=np.where(tmp1==1)[0][0]  #1st one create
+                    m2=np.where(tmp1==1)[0][1]  #2nd one create
                     nst=jst[:m3].sum()+jst[:m4].sum()-1
                     nen=ist[:m1].sum()+ist[:m2].sum()-1
                     sgn=(-1)**(nst+nen)

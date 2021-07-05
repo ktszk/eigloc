@@ -35,4 +35,5 @@ Thumbs.db
 *.png
 
 output.txt
-ck_LS.txt
+ck_LS.txt*
+eig_diff.txt*

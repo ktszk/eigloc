@@ -11,17 +11,19 @@ import get_ham
 lorb=3
 ne=6 #electron filling
 
-#zeta= 0.191651
+zeta= 0.191651
 
 F0p=0
-F0=12.55229
-#Up= 5.30021e-2
-#B40=1.92436e-3
-#B60=3.91589e-5
+F0= 12.55229
+Up= 5.30021e-2
+B40= 0.0 #1.92436e-3
+B60= 0.0 #3.91589e-5
 
 #Eu3+ ofelt
-Up  = 0.04972
-zeta= 0.16366
+#Up  = 0.04972
+#zeta= 0.16366
+#Up  = 0.0494
+#zeta= 0.1635
 #Tb3+ ofelt
 #Up  = 0.05381
 #zeta= 0.21139
@@ -31,17 +33,17 @@ init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
         0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
 
-cf_type=0
-erange=4.0
+cf_type=1
+erange=5.0
 idelta=1.e-4
 temp=2.6e-2 #~300K
 compair_ham=False
 sw_conv=False
 sw_conv_cf=True
 sw_full=True
-sw_spec=False
+sw_spec=True
 sw_F_type=0
-
+sw_unit=False #True cm^-1 False eV
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -122,7 +124,7 @@ def gen_hop():
     hop=np.vstack((tmp,tmp2))
     return(hop)
 
-def gen_hop_free(zeta,Blm,sw_ls=True):
+def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
     """
     generate H_soc and H_cf
     """
@@ -143,55 +145,125 @@ def gen_hop_free(zeta,Blm,sw_ls=True):
     #print(lsdiag)
     #cf
     if cf_type!=0:
-        #make unitary matrix j2lm
-        uni=np.zeros((ns,ns))
-        for i in range(2*lorb):
-            uni[i,4*lorb+1-i]=np.sqrt(2*lorb-i)
-            uni[i,2*lorb-1-i]=-np.sqrt(i+1.)
-        for i in range(ns//2):
-            uni[i+ns//2,ns-1-i]=np.sqrt(i+1.)
-            uni[i+2*lorb,2*lorb-i]=np.sqrt(ns/2-i)
-        uni=uni/np.sqrt(ns/2)
-        #make Hcf from j basis stevens op.
-        if lorb==3:
+        if wsoc_cf: #make Hcf from j basis stevens op.
+            #make unitary matrix j2lm
+            uni=np.zeros((ns,ns))
+            for i in range(2*lorb):
+                uni[i,4*lorb+1-i]=np.sqrt(2*lorb-i)
+                uni[i,2*lorb-1-i]=-np.sqrt(i+1.)
+            for i in range(ns//2):
+                uni[i+ns//2,ns-1-i]=np.sqrt(i+1.)
+                uni[i+2*lorb,2*lorb-i]=np.sqrt(ns/2-i)
+            uni=uni/np.sqrt(ns/2)
             if cf_type in {1,2}:
-                O4j=np.diag([ 1.,-3., 2., 2.,-3., 1., 7.,-13.,-3.,  9.,  9.,-3.,-13., 7.])
-                O6j=np.diag([ 0., 0., 0., 0., 0., 0.,1.,-5.,9.,-5.,-5.,9.,-5.,1.])
-            if cf_type==1:
-                #O44,j5/2
-                O4j[0,4]=np.sqrt(5.)
-                O4j[4,0]=O4j[0,4]
-                O4j[1,5]=O4j[0,4]
-                O4j[5,1]=O4j[1,5]
-                #O44,j7/2
-                O4j[6,10]=np.sqrt(35.)
-                O4j[10,6]=O4j[6,10]
-                O4j[13,9]=O4j[6,10]
-                O4j[9,13]=O4j[13,9]
-                O4j[7,11]=5.*np.sqrt(3)
-                O4j[11,7]=O4j[7,11]
-                O4j[8,12]=O4j[7,11]
-                O4j[12,8]=O4j[8,12]
-                #O64,j7/2
-                O6j[6,10]=-3.*np.sqrt(35.)
-                O6j[10,6]=O6j[6,10]
-                O6j[13,9]=O6j[6,10]
-                O6j[9,13]=O6j[13,9]
-                O6j[7,11]=7.*np.sqrt(3)
-                O6j[11,7]=O6j[7,11]
-                O6j[8,12]=O6j[7,11]
-                O6j[12,8]=O6j[8,12]
-                hopcf=uni.T.conjugate().dot((B40*O4j+21.*B60*O6j).dot(uni))
-            elif cf_type==2:
-                O2j=np.diag([10.,-2.,-8.,-8.,-2.,10.,21.,3.,-9.,-15.,-15.,-9.,3.,21.])
-                O66j=np.zeros((ns,ns))
-                O66j[6,12]=np.sqrt(7.)
-                O66j[12,6]=O66j[6,12]
-                O66j[7,13]=O66j[6,12]
-                O66j[13,7]=O66j[7,13]
-                hopcf=uni.T.conjugate().dot((B20*O2j/60.+B40*O4j+21.*B60*O6j+4.*B66*O66j).dot(uni))
-        elif lorb==2:
-            hopcf=np.zeros((ns,ns))
+                if lorb==3:
+                    O4j=np.diag([ 1.,-3., 2., 2.,-3., 1., 7.,-13.,-3.,  9.,  9.,-3.,-13., 7.])
+                    O6j=np.diag([ 0., 0., 0., 0., 0., 0.,1.,-5.,9.,-5.,-5.,9.,-5.,1.])
+                    if cf_type==1: #Cube
+                        #O44,j5/2
+                        O4j[0,4]=np.sqrt(5.)
+                        O4j[4,0]=O4j[0,4]
+                        O4j[1,5]=O4j[0,4]
+                        O4j[5,1]=O4j[1,5]
+                        #O44,j7/2
+                        O4j[6,10]=np.sqrt(35.)
+                        O4j[10,6]=O4j[6,10]
+                        O4j[13,9]=O4j[6,10]
+                        O4j[9,13]=O4j[13,9]
+                        O4j[7,11]=5.*np.sqrt(3)
+                        O4j[11,7]=O4j[7,11]
+                        O4j[8,12]=O4j[7,11]
+                        O4j[12,8]=O4j[8,12]
+                        #O64,j7/2
+                        O6j[6,10]=-3.*np.sqrt(35.)
+                        O6j[10,6]=O6j[6,10]
+                        O6j[13,9]=O6j[6,10]
+                        O6j[9,13]=O6j[13,9]
+                        O6j[7,11]=7.*O4j[7,11]/5
+                        O6j[11,7]=O6j[7,11]
+                        O6j[8,12]=O6j[7,11]
+                        O6j[12,8]=O6j[8,12]
+                        hopcf=uni.T.conjugate().dot((B40*O4j+21.*B60*O6j).dot(uni))
+                    elif cf_type==2: #hexagonal
+                        O2j=np.diag([10.,-2.,-8.,-8.,-2.,10.,21.,3.,-9.,-15.,-15.,-9.,3.,21.])
+                        O66j=np.zeros((ns,ns))
+                        O66j[6,12]=np.sqrt(7.)
+                        O66j[12,6]=O66j[6,12]
+                        O66j[7,13]=O66j[6,12]
+                        O66j[13,7]=O66j[7,13]
+                        hopcf=uni.T.conjugate().dot((B20*O2j/60.+B40*O4j+21.*B60*O6j+4.*B66*O66j).dot(uni))
+                    else:
+                        print('There is no crystal field in this symmetry please add')
+                        exit()
+                elif lorb==2:
+                    pass
+                elif lorb==1:
+                    pass
+                else:
+                    print('consider only l=1~3')
+                    exit()
+            else:
+                pass
+        else: #l basis (wosoc cf)
+            if cf_type in {1,2}:
+                if lorb==3:
+                    O4=np.diag([ 3., -7.,  1., 6., 1., -7., 3., 3.,-7., 1., 6., 1., -7., 3.])
+                    O6=np.diag([ 1., -6., 15., -20., 15., -6., 1., 1., -6., 15., -20., 15.,-6., 1.])
+                    if cf_type==1:
+                        #O44,l=3
+                        O4[0,4]=np.sqrt(15.)
+                        O4[4,0]=O4[0,4]
+                        O4[2,6]=O4[0,4]
+                        O4[6,2]=O4[0,4]
+                        O4[7,11]=O4[0,4]
+                        O4[11,7]=O4[0,4]
+                        O4[9,13]=O4[0,4]
+                        O4[13,9]=O4[0,4]
+                        O4[1,5]=5.
+                        O4[5,1]=O4[1,5]
+                        O4[8,12]=O4[1,5]
+                        O4[12,8]=O4[1,5]
+                        #O64,l=3
+                        O6[0,4]=-7*np.sqrt(15)
+                        O6[4,0]=O6[0,4]
+                        O6[2,6]=O6[0,4]
+                        O6[6,2]=O6[6,2]
+                        O6[7,11]=O6[0,4]
+                        O6[11,7]=O6[7,11]
+                        O6[9,13]=O6[0,4]
+                        O6[13,9]=O6[9,13]
+                        O6[1,5]=21.
+                        O6[5,1]=O6[1,5]
+                        O6[8,12]=O6[1,5]
+                        O6[12,8]=O6[8,12]
+                        hopcf=B40*O4+3.*B60*O6
+                    elif cf_type==2:
+                        O2=np.diag([5.,0.,-3,-4,-3.,0.,5.,5.,0.,-3.,-4.,-3.,0.,5.])
+                        O66=np.zeros((ns,ns))
+                        O66[0,6]=1.
+                        O66[6,0]=O66[0,6]
+                        O66[7,13]=O66[0,6]
+                        O66[13,7]=O66[7,13]
+                        hopcf=.05*B20*O2+B40*O4+3.*B60*O6+6.*B66*O66
+                elif lorb==2:
+                    O4=np.diag([1.,-4.,6.,-4.,1.,1.,-4,6.,-4.,1.])
+                    if cf_type==1:
+                        O4[0,4]=5.
+                        O4[4,0]=O4[0,4]
+                        O4[5,9]=O4[0,4]
+                        O4[9,5]=O4[5,9]
+                        hopcf=B40*O4
+                    elif cf_type==2:
+                        O2=np.diag([2.,-1.,-2.,-1.,2,2.,-1.,-2.,-1.,2])
+                        hopcf=.25*B20*O2+B40*O4
+                    else:
+                        print('There is no crystal field in this symmetry please add')
+                        exit()
+                elif lorb==1:
+                    pass
+                else:
+                    print('consider only l=1~3')
+                    exit()                    
         hop=hopsoc+hopcf
         #print(hopcf.round(3))
     else:
@@ -230,8 +302,8 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
         if dn<eps:
             L,S=0,0
             for i,j in enumerate(new_n.diagonal()):
-                L=L+(i-3)*j
-                S=S+(.5 if i<ns//2 else -.5)*j
+                L+=(i-3)*j
+                S+=(.5 if i<ns//2 else -.5)*j
             if switch:
                 print('converged loop %d'%k)
                 print(L.round(4),S.round(4),(L+S).round(4))
@@ -259,7 +331,7 @@ def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
     #print(ham.round(3))
     print((eig).round(3))
     plt.scatter([0]*ns,eig,marker='_')
-    if True:
+    if False:
         hop2=gen_hop()
         print(hop2.real.round(2))
         (eig2,uni)=sl.eigh(hop2)
@@ -280,7 +352,7 @@ def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
             Blm=(B4,B6,B2,B62)
         else:
             Blm=(0,0,0,0)    
-        hop=gen_hop_free(zeta,Blm,False)
+        hop=gen_hop_free(zeta,Blm,False,False)
         F=get_F(sw_F_type,F0,Up,Up2,Up3)
         U,J=get_ham.UJ(F,lorb)
         dU=get_ham.get_dU(F0p)
@@ -324,7 +396,7 @@ def main():
             Blm=(B40,B60,B20,B66)
         else:
             Blm=(0,0,0,0)
-    hop=gen_hop_free(zeta,Blm)
+    hop=gen_hop_free(zeta,Blm,wsoc_cf=False)
     print(F)
     print(Blm)
     #check hoppings eig ned to devide 6:8 with soc
@@ -351,23 +423,28 @@ def main():
     (eig,eigf)=sl.eigh(ham)
     eigmax=(np.where(eig<=erange+eig[0])[0]).size
     if sw_spec:
-        wlen,chi,chi2=get_ham.get_spectrum(nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,idelta)
+        """
+        if sw_spec true, calc and plot absorption spectrum
+        """
+        unit=eV2cm if sw_unit else 1.
+        wlen,chi,chi2,Jeig=get_ham.get_spectrum(nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,idelta)
         figs=plt.figure()
-        ax1=figs.add_subplot(211)
-        ax1.plot(wlen,chi)
-        ax1.scatter(eig[n_fcs]-eig[:eigmax],[0]*eigmax,c='red',marker='o')
-        ax1.scatter(eig[:eigmax]-eig[1],[0]*eigmax,c='green',marker='+')
-        ax1.scatter(eig[:eigmax]-eig[0],[0]*eigmax,c='cyan',marker='|')
-        ax1.set_xlim(0,erange)
-        ax2=figs.add_subplot(212)
-        ax2.plot(wlen,chi2)
-        ax2.scatter(eig[n_fcs]-eig[:eigmax],[0]*eigmax,c='red',marker='o')
-        ax2.scatter(eig[:eigmax]-eig[1],[0]*eigmax,c='green',marker='+')
-        ax2.scatter(eig[:eigmax]-eig[0],[0]*eigmax,c='cyan',marker='|')
-        ax2.set_xlim(0,erange)
+        ax1=figs.add_subplot(211,xlim=(0,erange*unit))
+        ax1.plot(wlen*unit,chi)
+        ax1.scatter((eig[n_fcs]-eig[:eigmax])*unit,[0]*eigmax,c='red',marker='o')
+        ax1.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
+        ax1.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
+        ax2=figs.add_subplot(212,xlim=(0,erange*unit))
+        ax2.plot(wlen*unit,chi2)
+        ax2.scatter((eig[n_fcs]-eig[:eigmax])*unit,[0]*eigmax,c='red',marker='o')
+        ax2.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
+        ax2.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
         figs.savefig('spectrum.pdf')
         #G=np.array([-(1./(complex(iw,id)-eig0)).sum().imag for iw in wlen])
         #plt.plot(wlen,G)
+        plt.show()
+
+        plt.scatter(Jeig[:eigmax],(eig-eig[0])[:eigmax])
         plt.show()
 
     #exit()
@@ -377,7 +454,7 @@ def main():
         wfw=np.where(abs(ef)**2>5.0e-3)[0]
         LS=[[l[:,0].sum(),l[:,1].sum()/2] for l in sp1[instates[wfw]]]
         weight=abs(ef[wfw])**2
-        f.write('%d %5.2f\n['%(i,eig.round(4)[i]))
+        f.write('%d %5.2f\n['%(i,eig.round(3)[i]))
         for wg in weight:
             f.write('%4.2f, '%wg)
         f.write(']%4.2f,%d\n'%(weight.sum(),weight.size))
@@ -387,13 +464,19 @@ def main():
                 f.write("%s "%spss)
             f.write('](%4.2f %4.2f %4.2f)\n'%(abs(LSJ[0]),abs(LSJ[1]),abs(LSJ[0]+LSJ[1])))
     f.close()
+
+    f=open('eig_diff.txt','w')
+    for i,est in enumerate(eig[:eigmax]):
+        for j,een in enumerate(eig[i+1:eigmax]):
+            diff_e=een-est
+            if diff_e<erange*eV2cm:
+                f.write('%6.3f, %d, %d\n'%(diff_e,j+i+1,i))
+    f.close()
     print(U.round(4))
     print(J.round(4))
-    #print(eig.round(4)[:eigmax])
-    de=np.array([j-i for i,j in zip(eig,eig[1:])]).round(4)[:eigmax-1]
-    eig2=eig[np.where(de!=0)[0]+1].round(4)
-    degenerate=np.array([np.where(eig.round(4)==i)[0].size for i in eig2])
-    for ide,ideg in zip(eig2.round(4),degenerate):
+    eig2=np.unique(eig[:eigmax].round(3))
+    degenerate=np.array([np.where(eig.round(3)==i)[0].size for i in eig2])
+    for ide,ideg in zip(eig2.round(3),degenerate):
         print('%6.3f(%d,J=%3.1f)'%(ide,ideg,(ideg-1)*.5),end=', ')
     else:
         print('')
@@ -403,7 +486,11 @@ def main():
                             17.374,18.945,21.508,24.456,27.747, #5DJ (J:0>4)
                             24.489,25.340,26.220,26.959,27.386, #5LJ (J:6>10)
                             26.564,26.600,26.725,26.733,27.065, #5GJ (J:2>6)
-                            30.483,30.729,30.941,30.964,31.248]) #5HJ (J:3,7,4,5,6)
+                            30.483,30.729,30.941,30.964,31.248, #5HJ (J:3,7,4,5,6)
+                            33.616,33.870,34.805,34.919,34.947, #5IJ (J:5,4,8,6,7)
+                            33.871,33.955,34.085,34.440,34.932, #5FJ (J:2,3,1,4)
+                            34.457,37.040,                      #3PJ (J:0,1)
+                            36.179,37.573,38.809,39.508])       #5KJ (J:5>8)
     elif ne==8: #Tb3+
         eig_ofelt=np.array([0.,2.02,3.279,4.258,4.927,5.405,5.632, #7FJ (J:6>0)
                             20.455,26.216,27.982,30.400,31.649, #5DJ (J:4>0)
@@ -413,8 +500,8 @@ def main():
     else:
         pass
     if ne in {6,8}:
-        print(eig_ofelt.round(4))
-        plt.scatter(eig_ofelt*0,eig_ofelt,marker='_',color='red')
+        print(np.sort(eig_ofelt.round(3)))
+        plt.scatter(eig_ofelt*0+0.01,eig_ofelt,marker='_',color='red')
     plt.xlim(-0.05,0.05)
     plt.ylim(0,erange*eV2cm)
     plt.show()
