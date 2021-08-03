@@ -8,16 +8,22 @@ import matplotlib.pyplot as plt
 import get_ham
 #from numba import jit
 
-lorb=3
-ne=6 #electron filling
+lorb=2
+ne=3 #electron filling
 
-zeta= 0.191651
+#zeta= 0.191651
 
-F0p=0
-F0= 12.55229
-Up= 5.30021e-2
+#F0p=0.5693
+#F0= 14.7508
+#Up= 5.7901e-2
 B40= 0.0 #1.92436e-3
 B60= 0.0 #3.91589e-5
+
+#check_d
+zeta=0.
+F0p=4.3220999
+F0=1.05931263
+Up=0.06480558
 
 #Eu3+ ofelt
 #Up  = 0.04972
@@ -41,9 +47,11 @@ compair_ham=False
 sw_conv=False
 sw_conv_cf=True
 sw_full=True
-sw_spec=True
+sw_spec=False
 sw_F_type=0
 sw_unit=False #True cm^-1 False eV
+sw_TSplot=True
+
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -78,6 +86,8 @@ ns=4*lorb+2 #number of states
 sp1=np.array([[-lorb+l,1] for l in range(2*lorb+1)]
              +[[-lorb+l,-1] for l in range(2*lorb+1)])
 sp=np.array(['%d,%d'%tuple(l) for l in sp1])
+eV2cm=8.06554 #ev to 10e3cm^-1
+
 if ne>ns:
     print('too many electrons')
     exit()
@@ -331,7 +341,7 @@ def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
     #print(ham.round(3))
     print((eig).round(3))
     plt.scatter([0]*ns,eig,marker='_')
-    if False:
+    if True:
         hop2=gen_hop()
         print(hop2.real.round(2))
         (eig2,uni)=sl.eigh(hop2)
@@ -363,7 +373,7 @@ def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
         hop2=gen_hop()
         (eig,uni)=sl.eigh(ham)
         (eig2,uni)=sl.eigh(hop2)
-        de=abs((eig-eig[0])-(eig2-eig2[0])).sum()
+        de=(abs((eig-eig[0])-(eig2-eig2[0]))**2).sum()
         return de
     x=[F0,F0p,Up,Up2,Up3,B40,B60,B20,B66]
     #minmethod='Nelder-Mead'
@@ -381,6 +391,33 @@ def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
     F=get_F(sw_F_type,F01,Up1,Up21,Up31)
     return(F,F0p1,Blm)
 
+def plot_TS(U,J,F,nwf,wf,dqmax=5,dqlen=100,mem_enough=False):
+    if sw_F_type==0:
+        RB=5.*F[2]/63.
+        RC=(9.*F[1]-5*F[2])/441.
+    elif sw_F_type==3:
+        RB=918/eV2cm
+        RC=4133/eV2cm
+    dq=np.linspace(0,dqmax,dqlen)
+    hop=np.array([gen_hop_free(zeta,(dqq,0,0,0),wsoc_cf=False) for dqq in dq])
+    if mem_enough:
+        eg=[sl.eigvalsh(get_ham.get_ham(wf,hp,nwf,U,J,ns,F,l=lorb)) for hp in hop]
+        eig=np.array([egg-egg[0] for egg in eg])
+    else:
+        eig=[]
+        for hp in hop:
+            ham=get_ham.get_ham(wf,hp,nwf,U,J,ns,F,l=lorb)
+            eg=sl.eigvalsh(ham)
+            eig.append(eg-eg[0])
+        eig=np.array(eig)
+    xlist=dq/RB
+    ylist=eig/RB
+    fig=plt.figure()
+    ax=fig.add_subplot(111,xlabel='Dq/B',ylabel='Energy/B',title='Tanabe-Sugano Diagram',xlim=(0,3),ylim=(0,50))
+    ax.plot(xlist,ylist,c='black',lw=1.)
+    fig.savefig("TSdiagram.png")
+    plt.show()
+
 def main():
     """
     main program of dia.py
@@ -396,115 +433,119 @@ def main():
             Blm=(B40,B60,B20,B66)
         else:
             Blm=(0,0,0,0)
-    hop=gen_hop_free(zeta,Blm,wsoc_cf=False)
-    print(F)
-    print(Blm)
-    #check hoppings eig ned to devide 6:8 with soc
-    (eig,eigf)=sl.eigh(hop)
-    np.set_printoptions(linewidth=500)
-    #print(hop.round(4))
-    #print(eig.round(4))
-    U,J=get_ham.UJ(F,lorb)
-    dU=get_ham.get_dU(Fp)
-    if compair_ham:
-        plot_hamHF(hop,U,J,dU,F)
     nwf=scsp.comb(ns,ne,exact=True)
     instates=np.array(list(itts.combinations(range(ns),ne)))
     wf=np.zeros((nwf,ns),dtype=int)
     for i,ist in enumerate(instates):
         wf[i][ist]=1
-    np.set_printoptions(linewidth=300)
-    #print(wf)
 
-    ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F,l=lorb)
-    #plt.spy(abs(ham))
-    #plt.show()
-    #print(ham)
-    (eig,eigf)=sl.eigh(ham)
-    eigmax=(np.where(eig<=erange+eig[0])[0]).size
-    if sw_spec:
-        """
-        if sw_spec true, calc and plot absorption spectrum
-        """
-        unit=eV2cm if sw_unit else 1.
-        wlen,chi,chi2,Jeig=get_ham.get_spectrum(nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,idelta)
-        figs=plt.figure()
-        ax1=figs.add_subplot(211,xlim=(0,erange*unit))
-        ax1.plot(wlen*unit,chi)
-        ax1.scatter((eig[n_fcs]-eig[:eigmax])*unit,[0]*eigmax,c='red',marker='o')
-        ax1.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
-        ax1.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
-        ax2=figs.add_subplot(212,xlim=(0,erange*unit))
-        ax2.plot(wlen*unit,chi2)
-        ax2.scatter((eig[n_fcs]-eig[:eigmax])*unit,[0]*eigmax,c='red',marker='o')
-        ax2.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
-        ax2.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
-        figs.savefig('spectrum.pdf')
-        #G=np.array([-(1./(complex(iw,id)-eig0)).sum().imag for iw in wlen])
-        #plt.plot(wlen,G)
-        plt.show()
+    U,J=get_ham.UJ(F,lorb)
+    dU=get_ham.get_dU(Fp)
 
-        plt.scatter(Jeig[:eigmax],(eig-eig[0])[:eigmax])
-        plt.show()
-
-    #exit()
-    eig=(eig-eig[0])*eV2cm
-    f=open('output.txt','w')
-    for i,ef in enumerate(eigf.T[:eigmax]):
-        wfw=np.where(abs(ef)**2>5.0e-3)[0]
-        LS=[[l[:,0].sum(),l[:,1].sum()/2] for l in sp1[instates[wfw]]]
-        weight=abs(ef[wfw])**2
-        f.write('%d %5.2f\n['%(i,eig.round(3)[i]))
-        for wg in weight:
-            f.write('%4.2f, '%wg)
-        f.write(']%4.2f,%d\n'%(weight.sum(),weight.size))
-        for sps,LSJ in zip(sp[instates[wfw]],LS):
-            f.write('[')
-            for spss in sps:
-                f.write("%s "%spss)
-            f.write('](%4.2f %4.2f %4.2f)\n'%(abs(LSJ[0]),abs(LSJ[1]),abs(LSJ[0]+LSJ[1])))
-    f.close()
-
-    f=open('eig_diff.txt','w')
-    for i,est in enumerate(eig[:eigmax]):
-        for j,een in enumerate(eig[i+1:eigmax]):
-            diff_e=een-est
-            if diff_e<erange*eV2cm:
-                f.write('%6.3f, %d, %d\n'%(diff_e,j+i+1,i))
-    f.close()
-    print(U.round(4))
-    print(J.round(4))
-    eig2=np.unique(eig[:eigmax].round(3))
-    degenerate=np.array([np.where(eig.round(3)==i)[0].size for i in eig2])
-    for ide,ideg in zip(eig2.round(3),degenerate):
-        print('%6.3f(%d,J=%3.1f)'%(ide,ideg,(ideg-1)*.5),end=', ')
+    if sw_TSplot:
+        plot_TS(U,J,F,nwf,wf)
     else:
-        print('')
-    plt.scatter([0]*eigmax,eig.round(4)[:eigmax],marker='_')
-    if ne==6: #Eu3+
-        eig_ofelt=np.array([0.,.374,1.036,1.888,2.866,3.921,5.022, #7FJ (J:0>6)
-                            17.374,18.945,21.508,24.456,27.747, #5DJ (J:0>4)
-                            24.489,25.340,26.220,26.959,27.386, #5LJ (J:6>10)
-                            26.564,26.600,26.725,26.733,27.065, #5GJ (J:2>6)
-                            30.483,30.729,30.941,30.964,31.248, #5HJ (J:3,7,4,5,6)
-                            33.616,33.870,34.805,34.919,34.947, #5IJ (J:5,4,8,6,7)
-                            33.871,33.955,34.085,34.440,34.932, #5FJ (J:2,3,1,4)
-                            34.457,37.040,                      #3PJ (J:0,1)
-                            36.179,37.573,38.809,39.508])       #5KJ (J:5>8)
-    elif ne==8: #Tb3+
-        eig_ofelt=np.array([0.,2.02,3.279,4.258,4.927,5.405,5.632, #7FJ (J:6>0)
-                            20.455,26.216,27.982,30.400,31.649, #5DJ (J:4>0)
-                            25.760,27.312,28.183,28.720,28.920, #5LJ (j:10>6)
-                            27.263,27.659,28.365,28.960,29.411, #5GJ (J:6>2)
-                            30.953,32.713,32.995,34.107,34.414]) #5HJ (J:7>3)
-    else:
-        pass
-    if ne in {6,8}:
-        print(np.sort(eig_ofelt.round(3)))
-        plt.scatter(eig_ofelt*0+0.01,eig_ofelt,marker='_',color='red')
-    plt.xlim(-0.05,0.05)
-    plt.ylim(0,erange*eV2cm)
-    plt.show()
+        hop=gen_hop_free(zeta,Blm,wsoc_cf=False)
+        print(F)
+        print(Blm)
+        #check hoppings eig ned to devide 6:8 with soc
+        (eig,eigf)=sl.eigh(hop)
+        np.set_printoptions(linewidth=500)
+        #print(hop.round(4))
+        #print(eig.round(4))
+        if compair_ham:
+            plot_hamHF(hop,U,J,dU,F)
+        np.set_printoptions(linewidth=300)
+        #print(wf)
+        ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F,l=lorb)
+        #plt.spy(abs(ham))
+        #plt.show()
+        #print(ham)
+        (eig,eigf)=sl.eigh(ham)
+        eigmax=(np.where(eig<=erange+eig[0])[0]).size
+        if sw_spec:
+            """
+            if sw_spec true, calc and plot absorption spectrum
+            """
+            unit=eV2cm if sw_unit else 1.
+            wlen,chi,chi2,Jeig=get_ham.get_spectrum(nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,idelta)
+            figs=plt.figure()
+            ax1=figs.add_subplot(211,xlim=(0,erange*unit))
+            ax1.plot(wlen*unit,chi)
+            ax1.scatter((eig[n_fcs]-eig[:eigmax])*unit,[0]*eigmax,c='red',marker='o')
+            ax1.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
+            ax1.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
+            ax2=figs.add_subplot(212,xlim=(0,erange*unit))
+            ax2.plot(wlen*unit,chi2)
+            ax2.scatter((eig[n_fcs]-eig[:eigmax])*unit,[0]*eigmax,c='red',marker='o')
+            ax2.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
+            ax2.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
+            figs.savefig('spectrum.pdf')
+            #G=np.array([-(1./(complex(iw,id)-eig0)).sum().imag for iw in wlen])
+            #plt.plot(wlen,G)
+            plt.show()
+
+            plt.scatter(Jeig[:eigmax],(eig-eig[0])[:eigmax])
+            plt.show()
+
+        #exit()
+        eig=(eig-eig[0])*eV2cm
+        f=open('output.txt','w')
+        for i,ef in enumerate(eigf.T[:eigmax]):
+            wfw=np.where(abs(ef)**2>5.0e-3)[0]
+            LS=[[l[:,0].sum(),l[:,1].sum()/2] for l in sp1[instates[wfw]]]
+            weight=abs(ef[wfw])**2
+            f.write('%d %5.2f\n['%(i,eig.round(3)[i]))
+            for wg in weight:
+                f.write('%4.2f, '%wg)
+            f.write(']%4.2f,%d\n'%(weight.sum(),weight.size))
+            for sps,LSJ in zip(sp[instates[wfw]],LS):
+                f.write('[')
+                for spss in sps:
+                    f.write("%s "%spss)
+                f.write('](%4.2f %4.2f %4.2f)\n'%(abs(LSJ[0]),abs(LSJ[1]),abs(LSJ[0]+LSJ[1])))
+        f.close()
+
+        f=open('eig_diff.txt','w')
+        for i,est in enumerate(eig[:eigmax]):
+            for j,een in enumerate(eig[i+1:eigmax]):
+                diff_e=een-est
+                if diff_e<erange*eV2cm:
+                    f.write('%6.3f, %d, %d\n'%(diff_e,j+i+1,i))
+        f.close()
+        print(U.round(4))
+        print(J.round(4))
+        eig2=np.unique(eig[:eigmax].round(3))
+        degenerate=np.array([np.where(eig.round(3)==i)[0].size for i in eig2])
+        for ide,ideg in zip(eig2.round(3),degenerate):
+            print('%6.3f(%d,J=%3.1f)'%(ide,ideg,(ideg-1)*.5),end=', ')
+        else:
+            print('')
+        plt.scatter([0]*eigmax,eig.round(4)[:eigmax],marker='_')
+        if ne==6: #Eu3+
+            eig_ofelt=np.array([0.,.374,1.036,1.888,2.866,3.921,5.022, #7FJ (J:0>6)
+                                17.374,18.945,21.508,24.456,27.747, #5DJ (J:0>4)
+                                24.489,25.340,26.220,26.959,27.386, #5LJ (J:6>10)
+                                26.564,26.600,26.725,26.733,27.065, #5GJ (J:2>6)
+                                30.483,30.729,30.941,30.964,31.248, #5HJ (J:3,7,4,5,6)
+                                33.616,33.870,34.805,34.919,34.947, #5IJ (J:5,4,8,6,7)
+                                33.871,33.955,34.085,34.440,34.932, #5FJ (J:2,3,1,4)
+                                34.457,37.040,                      #3PJ (J:0,1)
+                                36.179,37.573,38.809,39.508])       #5KJ (J:5>8)
+        elif ne==8: #Tb3+
+            eig_ofelt=np.array([0.,2.02,3.279,4.258,4.927,5.405,5.632, #7FJ (J:6>0)
+                                20.455,26.216,27.982,30.400,31.649, #5DJ (J:4>0)
+                                25.760,27.312,28.183,28.720,28.920, #5LJ (j:10>6)
+                                27.263,27.659,28.365,28.960,29.411, #5GJ (J:6>2)
+                                30.953,32.713,32.995,34.107,34.414]) #5HJ (J:7>3)
+        else:
+            pass
+        if ne in {6,8}:
+            print(np.sort(eig_ofelt.round(3)))
+            plt.scatter(eig_ofelt*0+0.01,eig_ofelt,marker='_',color='red')
+        plt.xlim(-0.05,0.05)
+        plt.ylim(0,erange*eV2cm)
+        plt.show()
 
 #import time
 #t1=time.time()

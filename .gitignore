@@ -34,6 +34,8 @@ Thumbs.db
 *.pdf
 *.png
 
+hopu.dat
+hopd.dat
 output.txt
 ck_LS.txt*
 eig_diff.txt*
