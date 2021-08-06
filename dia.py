@@ -34,9 +34,11 @@ Up=0.06480558
 #Up  = 0.05381
 #zeta= 0.21139
 
+
+init_n=[1.,1.,1.,0.,0.,0.,0.,0.,0.,0.]
 #init_n=[1.,1.,1.,1.,1.,1.,0.,0.,0.,0.,0.,0.,0.,0.]
-init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
-        0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
+#init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
+#        0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
 
 cf_type=1
@@ -50,7 +52,7 @@ sw_full=True
 sw_spec=False
 sw_F_type=0
 sw_unit=False #True cm^-1 False eV
-sw_TSplot=True
+sw_TSplot=False
 
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
@@ -91,6 +93,7 @@ eV2cm=8.06554 #ev to 10e3cm^-1
 if ne>ns:
     print('too many electrons')
     exit()
+
 def get_F(F_type,E0,E1,E2,E3):
     """
     generate Slater-Condon parameteres
@@ -154,6 +157,7 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
     #print(np.round(lspm,4))
     #print(lsdiag)
     #cf
+
     if cf_type!=0:
         if wsoc_cf: #make Hcf from j basis stevens op.
             #make unitary matrix j2lm
@@ -365,9 +369,9 @@ def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
         hop=gen_hop_free(zeta,Blm,False,False)
         F=get_F(sw_F_type,F0,Up,Up2,Up3)
         U,J=get_ham.UJ(F,lorb)
-        dU=get_ham.get_dU(F0p)
+        dU=get_ham.get_dU(F0p,lorb)
         if sw_full:
-            ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,switch=False)
+            ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,switch=False,lorb=lorb)
         else:
             ham=get_HF(hop,U,J,switch=False)
         hop2=gen_hop()
@@ -440,7 +444,7 @@ def main():
         wf[i][ist]=1
 
     U,J=get_ham.UJ(F,lorb)
-    dU=get_ham.get_dU(Fp)
+    dU=get_ham.get_dU(Fp,lorb)
 
     if sw_TSplot:
         plot_TS(U,J,F,nwf,wf)
