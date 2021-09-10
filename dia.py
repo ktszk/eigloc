@@ -9,18 +9,18 @@ import get_ham
 #from numba import jit
 
 lorb=2
-ne=3 #electron filling
+ne=4 #electron filling
 
 #zeta= 0.191651
 
 #F0p=0.5693
 #F0= 14.7508
 #Up= 5.7901e-2
-B40= 0.0 #1.92436e-3
-B60= 0.0 #3.91589e-5
+#B40= 1.92436e-3
+#B60= 3.91589e-5
 
 #check_d
-zeta=0.
+zeta=0.1
 F0p=4.3220999
 F0=1.05931263
 Up=0.06480558
@@ -34,26 +34,32 @@ Up=0.06480558
 #Up  = 0.05381
 #zeta= 0.21139
 
-
-init_n=[1.,1.,1.,0.,0.,0.,0.,0.,0.,0.]
+init_n=[1.,1.,1.,1.,0.,0.,0.,0.,0.,0.]
 #init_n=[1.,1.,1.,1.,1.,1.,0.,0.,0.,0.,0.,0.,0.,0.]
 #init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
 #        0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
+JRPG=np.array([[0,3,3],[6,3,3],[0,2,2]])
 
 cf_type=1
 erange=5.0
 idelta=1.e-4
 temp=2.6e-2 #~300K
+
+iemax=2.
+demax=3.
+demin=1.e-3
+
 compair_ham=False
 sw_conv=False
 sw_conv_cf=True
 sw_full=True
-sw_spec=False
+sw_spec=True
 sw_F_type=0
 sw_unit=False #True cm^-1 False eV
 sw_TSplot=False
-
+sw_cfsoc=False
+sw_arrows=True
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -278,8 +284,8 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                 else:
                     print('consider only l=1~3')
                     exit()                    
-        hop=hopsoc+hopcf
         #print(hopcf.round(3))
+        hop=hopsoc+hopcf
     else:
         hop=hopsoc
     return(hop)
@@ -366,7 +372,7 @@ def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
             Blm=(B4,B6,B2,B62)
         else:
             Blm=(0,0,0,0)    
-        hop=gen_hop_free(zeta,Blm,False,False)
+        hop=gen_hop_free(zeta,Blm,False,sw_cfsoc)
         F=get_F(sw_F_type,F0,Up,Up2,Up3)
         U,J=get_ham.UJ(F,lorb)
         dU=get_ham.get_dU(F0p,lorb)
@@ -403,7 +409,7 @@ def plot_TS(U,J,F,nwf,wf,dqmax=5,dqlen=100,mem_enough=False):
         RB=918/eV2cm
         RC=4133/eV2cm
     dq=np.linspace(0,dqmax,dqlen)
-    hop=np.array([gen_hop_free(zeta,(dqq,0,0,0),wsoc_cf=False) for dqq in dq])
+    hop=np.array([gen_hop_free(zeta,(dqq,0,0,0),wsoc_cf=sw_cfsoc) for dqq in dq])
     if mem_enough:
         eg=[sl.eigvalsh(get_ham.get_ham(wf,hp,nwf,U,J,ns,F,l=lorb)) for hp in hop]
         eig=np.array([egg-egg[0] for egg in eg])
@@ -449,7 +455,7 @@ def main():
     if sw_TSplot:
         plot_TS(U,J,F,nwf,wf)
     else:
-        hop=gen_hop_free(zeta,Blm,wsoc_cf=False)
+        hop=gen_hop_free(zeta,Blm,wsoc_cf=sw_cfsoc)
         print(F)
         print(Blm)
         #check hoppings eig ned to devide 6:8 with soc
@@ -472,7 +478,8 @@ def main():
             if sw_spec true, calc and plot absorption spectrum
             """
             unit=eV2cm if sw_unit else 1.
-            wlen,chi,chi2,Jeig=get_ham.get_spectrum(nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,idelta)
+            wlen,chi,chi2,Jeig,Jcolor,arrows,arrows_mag=get_ham.get_spectrum(
+                nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,JRPG,iemax,demax,demin,idelta)
             figs=plt.figure()
             ax1=figs.add_subplot(211,xlim=(0,erange*unit))
             ax1.plot(wlen*unit,chi)
@@ -485,11 +492,20 @@ def main():
             ax2.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
             ax2.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
             figs.savefig('spectrum.pdf')
-            #G=np.array([-(1./(complex(iw,id)-eig0)).sum().imag for iw in wlen])
-            #plt.plot(wlen,G)
             plt.show()
 
-            plt.scatter(Jeig[:eigmax],(eig-eig[0])[:eigmax])
+            #print(arrows)
+            fig=plt.figure()
+            ax=fig.add_subplot(111)
+            ax.scatter(Jeig[:eigmax],(eig-eig[0])[:eigmax],c=Jcolor[:eigmax])
+            if sw_arrows:
+                for ar in arrows: #electric dipole lightgray
+                    ax.arrow(x=Jeig[ar[1]],y=eig[ar[1]]-eig[0],dx=Jeig[ar[0]]-Jeig[ar[1]],dy=eig[ar[0]]-eig[ar[1]],
+                             width=0.01,head_width=0.05,head_length=0.2,length_includes_head=True,color='lightgray')
+                for ar in arrows_mag: #magnetic dipole darkgray
+                    ax.arrow(x=Jeig[ar[1]],y=eig[ar[1]]-eig[0],dx=Jeig[ar[0]]-Jeig[ar[1]],dy=eig[ar[0]]-eig[ar[1]],
+                             width=0.01,head_width=0.05,head_length=0.2,length_includes_head=True,color='darkgray')
+            fig.savefig('Grotrian.pdf')
             plt.show()
 
         #exit()

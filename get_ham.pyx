@@ -42,7 +42,7 @@ def get_dU(F0,int l=3):
     cdef cnp.ndarray[cnp.float64_t,ndim=2] dU
 
     cp=gencp(l+1,l,l)
-    dulm= lambda m1,m2: (F0*cp[m1,m1,0]*cp[m2,m2,0])
+    dulm= lambda m1,m2: (abs(F0)*cp[m1,m1,0]*cp[m2,m2,0])
     dU=np.array([[float(dulm(i,j)) for i in range(lmax)] for j in range(lmax)])
     return dU
 
@@ -159,7 +159,8 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     return mag_spec,Lsq,Lz0,Ssq,Jsq,.5*(np.sqrt(1.+4.*Jeig)-1.).round(2)
 
 def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
-          cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax,int lorb):
+             cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax,int lorb,
+             cnp.ndarray[cnp.int64_t,ndim=2] JRGB):
     """
     calculate electric and magnetic dipole
     details of argments
@@ -252,6 +253,7 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     Su=np.unique(S_size)
     Ju=np.unique(J_size)
     f=open('ck_LS.txt','w')
+    Jcolor=np.zeros((eigmax,3))
     for i,(ckuni,Je) in enumerate(zip(RSuni,Jeig)):
         LSW=[]
         for Li in Lu:
@@ -263,6 +265,11 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
                     Scu=Lcu[np.where(Sl==Si)[0]]
                     Jls=Jl[np.where(Sl==Si)[0]]
                     LS_Weight=Scu[np.where(Jls==Ji)[0]].sum().round(3)
+                    for i2,Jc in enumerate(JRGB):
+                        if abs(Jc[0]-Ji)<1.e-2 and abs(Jc[1]-Si)<1.e-2 and Jc[2]==Li:
+                            Jcolor[i,i2]=LS_Weight
+                        else:
+                            pass
                     if LS_Weight>1.e-2:
                         RS=('^(%d)%s_%3.1f'%(2*Si+1,L_label[Li],abs(Ji)) if (2*Ji%2!=0) 
                             else '^(%d)%s_%d'%(2*Si+1,L_label[Li],abs(Ji)))
@@ -293,12 +300,12 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     rz=uni[:,:eigmax].T.conjugate().dot(rz0.dot(uni[:,:eigmax]))
     r_spec=abs(rx)**2+abs(ry)**2+abs(rz)**2
     print('calc elec dipole')
-    return mag_spec,r_spec,Jeig
+    return mag_spec,r_spec,Jeig,Jcolor
 
 def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.float64_t,ndim=1] eig,
                  cnp.ndarray[cnp.complex128_t,ndim=2] eigf,cnp.ndarray[cnp.int64_t,ndim=2] instates,
-                 cnp.ndarray[cnp.int64_t,ndim=2] sp1,int erange,double temp, int lorb, 
-                 double id=1.0e-3,int wmesh=2000):
+                 cnp.ndarray[cnp.int64_t,ndim=2] sp1,double erange, double temp, int lorb, 
+                 cnp.ndarray[cnp.int64_t,ndim=2] JRGB,double ie_max=2.0, double de_max=3.0, double de_min=1.e-3, double id=1.0e-3, int wmesh=2000):
     """
     generate spectrum
     """
@@ -307,7 +314,26 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
 
 
     rsq=0.4376**2
-    mnn2,mnn,Jeig=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb)
+    mnn2,mnn,Jeig,Jcolor=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb,JRGB)
+    arrows=[]
+    for i,mn in enumerate(mnn):
+        for j0,m in enumerate(mn[i+1:]):
+            j=i+j0+1
+            if (abs(eig[i]-eig[0])<ie_max and abs(eig[j]-eig[0])<erange and de_min<abs(eig[j]-eig[i])<de_max) and m>1.e-3:
+                print(eig[i]-eig[0],eig[i]-eig[j],i,j)
+                arrows.append([i,j])
+            else:
+                pass
+    arrows_mag=[]
+    for i,mn in enumerate(mnn2):
+        for j0,m in enumerate(mn[i+1:]):
+            j=i+j0+1
+            if (abs(eig[i]-eig[0])<ie_max and abs(eig[j]-eig[0])<erange and de_min<abs(eig[j]-eig[i])<de_max) and m>1.e-5:
+                print(eig[i]-eig[0],eig[i]-eig[j],i,j)
+                arrows_mag.append([i,j])
+            else:
+                pass
+
     fig=plt.figure()
     ax1=fig.add_subplot(211)
     maps=ax1.imshow(mnn.round(3),cmap=plt.cm.jet,interpolation='nearest')
@@ -325,7 +351,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     dfunc=np.array([[e2-e1 for e1 in func] for e2 in func]).flatten()
     chi=rsq*np.array([(mnn*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
     chi2=np.array([(mnn2*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
-    return wlen,chi,chi2,Jeig
+    return wlen,chi,chi2,Jeig,Jcolor,arrows,arrows_mag
 
 def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
                 cnp.ndarray[cnp.float64_t,ndim=2] J, cnp.ndarray[cnp.float64_t,ndim=2] dU, F,
