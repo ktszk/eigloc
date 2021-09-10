@@ -24,6 +24,7 @@ zeta=0.1
 F0p=4.3220999
 F0=1.05931263
 Up=0.06480558
+B40=0.002
 
 #Eu3+ ofelt
 #Up  = 0.04972
@@ -42,24 +43,26 @@ init_n=[1.,1.,1.,1.,0.,0.,0.,0.,0.,0.]
 JRPG=np.array([[0,3,3],[6,3,3],[0,2,2]])
 
 cf_type=1
-erange=5.0
+erange=5.0 #plot energy range
 idelta=1.e-4
 temp=2.6e-2 #~300K
 
-iemax=2.
-demax=3.
-demin=1.e-3
+#for arrows plotting
+iemax=3.          #max initial energy value
+demax=5.          #max transition energy to plot arrows
+demin=1.e-3       #min tansition energy to plot arrows
 
-compair_ham=False
-sw_conv=False
-sw_conv_cf=True
-sw_full=True
-sw_spec=True
-sw_F_type=0
-sw_unit=False #True cm^-1 False eV
-sw_TSplot=False
-sw_cfsoc=False
-sw_arrows=True
+compair_ham=False #switch compair MF and QSGW hamiltonian or not
+sw_conv=False     #switch calc parameters or not
+sw_conv_cf=True   #switch consider crystal field or not
+sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
+sw_spec=True      #switch calc spectrum and grotrian diagram or not
+sw_F_type=0       #switch set F setting 
+sw_unit=False     #True cm^-1 False eV
+sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
+sw_cfsoc=False    #switch crystal field basis j or l,s
+sw_arrows=True    #switch plot arrows correspond to transtion (<l|r or 2s+l|m>^2<1e-3)
+
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -72,11 +75,15 @@ else:
         Up3=0
 try:
     B40
+except NameError:
+    print('B40 set zero')
+    B40=0.0
+try:
     B60
 except NameError:
-    print('B40,B60 set zero')
-    B40=0.0
+    print('B60 set zero')
     B60=0.0
+
 try:
     B20
     B66
