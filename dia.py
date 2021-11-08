@@ -8,35 +8,44 @@ import matplotlib.pyplot as plt
 import get_ham
 #from numba import jit
 
-lorb=2
-ne=4 #electron filling
+lorb=3
+ne=7 #electron filling
 
 #zeta= 0.191651
 
-#F0p=0.5693
-#F0= 14.7508
+F0p=0.5693
+F0= 14.7508
 #Up= 5.7901e-2
 #B40= 1.92436e-3
 #B60= 3.91589e-5
 
 #check_d
-zeta=0.1
-F0p=4.3220999
-F0=1.05931263
-Up=0.06480558
-B40=0.002
+#zeta=0.1
+#F0p=4.3220999
+#F0=1.05931263
+#Up=0.06480558
+#B40=0.002
 
+#Pr3+
+#Up=0.0379
+#zeta=0.0905
+#Pm3+
+#Up=0.0429
+#zeta=0.1327
 #Eu3+ ofelt
-#Up  = 0.04972
-#zeta= 0.16366
+Up  = 0.04972
+zeta= 0.16366
 #Up  = 0.0494
 #zeta= 0.1635
+Up  = 0.0503
+zeta= 0.1960
 #Tb3+ ofelt
 #Up  = 0.05381
 #zeta= 0.21139
+#Ho3+
+#Up=0.0558
+#zeta=0.2682
 
-init_n=[1.,1.,1.,1.,0.,0.,0.,0.,0.,0.]
-#init_n=[1.,1.,1.,1.,1.,1.,0.,0.,0.,0.,0.,0.,0.,0.]
 #init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
 #        0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
@@ -49,20 +58,21 @@ temp=2.6e-2 #~300K
 
 #for arrows plotting
 iemax=3.          #max initial energy value
-demax=5.          #max transition energy to plot arrows
+demax=3.5         #max transition energy to plot arrows
 demin=1.e-3       #min tansition energy to plot arrows
 
 compair_ham=False #switch compair MF and QSGW hamiltonian or not
 sw_conv=False     #switch calc parameters or not
 sw_conv_cf=True   #switch consider crystal field or not
 sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
-sw_spec=True      #switch calc spectrum and grotrian diagram or not
+sw_spec=False     #switch calc spectrum and grotrian diagram or not
 sw_F_type=0       #switch set F setting 
-sw_unit=False     #True cm^-1 False eV
+sw_unit=False      #True cm^-1 False eV
 sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
 sw_cfsoc=False    #switch crystal field basis j or l,s
 sw_arrows=True    #switch plot arrows correspond to transtion (<l|r or 2s+l|m>^2<1e-3)
-
+sw_add_pdata=False
+sw_dd=True
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -98,14 +108,20 @@ else:
     n_fcs=2
 
 ns=4*lorb+2 #number of states
-sp1=np.array([[-lorb+l,1] for l in range(2*lorb+1)]
-             +[[-lorb+l,-1] for l in range(2*lorb+1)])
-sp=np.array(['%d,%d'%tuple(l) for l in sp1])
 eV2cm=8.06554 #ev to 10e3cm^-1
 
 if ne>ns:
     print('too many electrons')
     exit()
+
+sp1=np.array([[-lorb+l,1] for l in range(2*lorb+1)]
+             +[[-lorb+l,-1] for l in range(2*lorb+1)])
+sp=np.array(['%d,%d'%tuple(l) for l in sp1])
+try:
+    init_n
+except NameError:
+    print('generate init_n')
+    init_n=[1 if i<ne else 0 for i in range(ns)]
 
 def get_F(F_type,E0,E1,E2,E3):
     """
@@ -435,32 +451,75 @@ def plot_TS(U,J,F,nwf,wf,dqmax=5,dqlen=100,mem_enough=False):
     fig.savefig("TSdiagram.png")
     plt.show()
 
+def plot_dd():
+    def plotdd(ax,z_list,F2list,xtlabs,marker,color):
+        for j,(zl,f2) in enumerate(zip(z_list,F2list)):
+            ne=j+1
+            nwf=scsp.comb(ns,ne,exact=True)
+            instates=np.array(list(itts.combinations(range(ns),ne)))
+            wf=np.zeros((nwf,ns),dtype=int)
+            for i,ist in enumerate(instates):
+                wf[i][ist]=1
+            F=get_F(sw_F_type,10,f2,0,0)
+            U,J=get_ham.UJ(F,lorb)
+            hop=gen_hop_free(zl,Blm,wsoc_cf=sw_cfsoc)
+            ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F,l=lorb)
+            (eig,eigf)=sl.eigh(ham)
+            eigmax=(np.where(eig<=erange+eig[0])[0]).size
+            eig=(eig-eig[0])*unit
+            ax.scatter([j]*eigmax,eig.round(4)[:eigmax],marker=marker,c=color)
+
+    Blm=(0,0,0,0)
+    cunit='cm$^{-1}$' if sw_unit else 'eV'
+    unit=eV2cm if sw_unit else 1.
+    xtlabs= [ 'Ce' , 'Pr' , 'Nd' , 'Pm' , 'Sm' , 'Eu' , 'Gd' , 'Tb' , 'Dy' , 'Ho' , 'Er' , 'Tm' , 'Yb' ]
+    #dieke
+    z_list= [0.0794,0.0905,0.1086,0.1327,0.1488,0.1637,0.1960,0.2114,0.2356,0.2682,0.3031,0.3293,0.3574]
+    F2list= [0.0000,0.0379,0.0418,0.0429,0.0459,0.0497,0.0503,0.0538,0.0521,0.0558,0.0532,0.0559,0.0000]
+    #our results
+    z_list2=[0.0741,0.1102,0.1346,0.1532,0.1590,0.1917,0.2074,0.2391,0.2920,0.3548,0.4456,0.5136,0.4180]
+    F2list2=[0.0236,0.0414,0.0441,0.0521,0.0521,0.0569,0.0579,0.0626,0.0637,0.0646,0.0678,0.0703,0.0740]
+    plt.plot(np.arange(len(F2list))+1,F2list)
+    plt.plot(np.arange(len(F2list2))+1,F2list2)
+    plt.show()
+    exit()
+    fig=plt.figure()
+    ax=fig.add_subplot(111,ylim=(0,erange*unit),xticks=list(range(len(z_list))),xticklabels=xtlabs)
+    ax.set_ylabel(r'Energy (%s)'%cunit)
+    plotdd(ax,z_list,F2list,xtlabs,'.','black')
+    plotdd(ax,z_list2,F2list2,xtlabs,'_','red')
+    plt.show()
+
 def main():
     """
     main program of dia.py
     """
     eV2cm=8.06554 #ev to 10e3cm^-1
     #eV2cm=1.
-    if sw_conv:
-        (F,Fp,Blm)=ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66)
+    if sw_dd:
+        pass
     else:
-        Fp=F0p
-        F=get_F(sw_F_type,F0,Up,Up2,Up3)
-        if sw_conv_cf:
-            Blm=(B40,B60,B20,B66)
+        if sw_conv:
+            (F,Fp,Blm)=ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66)
         else:
-            Blm=(0,0,0,0)
-    nwf=scsp.comb(ns,ne,exact=True)
-    instates=np.array(list(itts.combinations(range(ns),ne)))
-    wf=np.zeros((nwf,ns),dtype=int)
-    for i,ist in enumerate(instates):
-        wf[i][ist]=1
-
-    U,J=get_ham.UJ(F,lorb)
-    dU=get_ham.get_dU(Fp,lorb)
+            Fp=F0p
+            F=get_F(sw_F_type,F0,Up,Up2,Up3)
+            if sw_conv_cf:
+                Blm=(B40,B60,B20,B66)
+            else:
+                Blm=(0,0,0,0)
+        nwf=scsp.comb(ns,ne,exact=True)
+        instates=np.array(list(itts.combinations(range(ns),ne)))
+        wf=np.zeros((nwf,ns),dtype=int)
+        for i,ist in enumerate(instates):
+            wf[i][ist]=1
+        U,J=get_ham.UJ(F,lorb)
+        dU=get_ham.get_dU(Fp,lorb)
 
     if sw_TSplot:
         plot_TS(U,J,F,nwf,wf)
+    elif sw_dd:
+        plot_dd()
     else:
         hop=gen_hop_free(zeta,Blm,wsoc_cf=sw_cfsoc)
         print(F)
@@ -549,27 +608,71 @@ def main():
         else:
             print('')
         plt.scatter([0]*eigmax,eig.round(4)[:eigmax],marker='_')
-        if ne==6: #Eu3+
-            eig_ofelt=np.array([0.,.374,1.036,1.888,2.866,3.921,5.022, #7FJ (J:0>6)
-                                17.374,18.945,21.508,24.456,27.747, #5DJ (J:0>4)
-                                24.489,25.340,26.220,26.959,27.386, #5LJ (J:6>10)
-                                26.564,26.600,26.725,26.733,27.065, #5GJ (J:2>6)
-                                30.483,30.729,30.941,30.964,31.248, #5HJ (J:3,7,4,5,6)
-                                33.616,33.870,34.805,34.919,34.947, #5IJ (J:5,4,8,6,7)
-                                33.871,33.955,34.085,34.440,34.932, #5FJ (J:2,3,1,4)
-                                34.457,37.040,                      #3PJ (J:0,1)
-                                36.179,37.573,38.809,39.508])       #5KJ (J:5>8)
-        elif ne==8: #Tb3+
-            eig_ofelt=np.array([0.,2.02,3.279,4.258,4.927,5.405,5.632, #7FJ (J:6>0)
-                                20.455,26.216,27.982,30.400,31.649, #5DJ (J:4>0)
-                                25.760,27.312,28.183,28.720,28.920, #5LJ (j:10>6)
-                                27.263,27.659,28.365,28.960,29.411, #5GJ (J:6>2)
-                                30.953,32.713,32.995,34.107,34.414]) #5HJ (J:7>3)
-        else:
+        if lorb==3 and sw_add_pdata:
+            if ne==1: #Ce3+
+                pass
+            elif ne==2: #pr3+
+                eig_previous=np.array([0.,2.026,4.167,4.735,6.088,6.774, #3HJ(J:4>6),3FJ(J:2>4)
+                                       10.002,16.973,20.896,50.673, #1G4,1D2,1I6,1S0
+                                       20.407,20.984,22.211]) #3PJ(J:0>2)
+            elif ne==3: #Nd3+
+                pass
+            elif ne==4: #Pm3+
+                eig_previous=np.array([0.,1.586,3.305,5.101,6.934, #5IJ(J:4>8)
+                                       12.288,12.731,13.650,14.602,16.016, #5FJ(J:1>5)
+                                       14.369,15.915,17.186,18.756, #5S2, 3KJ(J:6>8)
+                                       17.473,19.881,24.369, #3HJ(J:4>6)
+                                       17.719,18.095,20.274,22.204,22.632, #5GJ(J:2>6)
+                                       21.187,24.252,26.736,22.030,23.154,24.765, #3GJ(J:3>5),3DJ(J:2,1,3)
+                                       22.208,23.353,24.253,24.254,27.838,28.429, #3LJ(J:7>9),3MJ(J:8>10)
+                                       24.849,27.120,25.373,26.439,28.094,28.654,29.128, #3PJ(J:0>1),3FJ(J:4,2,3)
+                                       25.373,27.514,28.719,29.221,29.319,32.290, #1D2,3IJ(J:5>7),1L8,1G4
+                                       29.788,30.318,31.161,31.989,33.019,32.864, #5DJ(J:0>4),1D2
+                                       32.552,35.979,32.930,34.442,36.962,38.443, #3FJ(J:3,4),3P0,1I6,1K7,1D2
+                                       35.337,35.983,38.013,36.362,39.684,39.743]) #3HJ(J:4>6),1H5,3GJ(J:4,3)
+            elif ne==5: #Sm3+
+                pass
+            elif ne==6: #Eu3+
+                eig_previous=np.array([0.,.374,1.036,1.888,2.866,3.921,5.022, #7FJ(J:0>6)
+                                       17.374,18.945,21.508,24.456,27.747, #5DJ(J:0>4)
+                                       24.489,25.340,26.220,26.959,27.386, #5LJ(J:6>10)
+                                       26.564,26.600,26.725,26.733,27.065, #5GJ(J:2>6)
+                                       30.483,30.729,30.941,30.964,31.248, #5HJ(J:3,7,4,5,6)
+                                       33.616,33.870,34.805,34.919,34.947, #5IJ(J:5,4,8,6,7)
+                                       33.871,33.955,34.085,34.440,34.932, #5FJ(J:2,3,1,4)
+                                       34.457,37.040,                      #3PJ(J:0,1)
+                                       36.179,37.573,38.809,39.508])       #5KJ(J:5>8)
+            elif ne==7: #Gd3+
+                pass
+            elif ne==8: #Tb3+
+                eig_previous=np.array([0.,2.02,3.279,4.258,4.927,5.405,5.632, #7FJ(J:6>0)
+                                       20.455,26.216,27.982,30.400,31.649, #5DJ(J:4>0)
+                                       25.760,27.312,28.183,28.720,28.920, #5LJ(j:10>6)
+                                       27.263,27.659,28.365,28.960,29.411, #5GJ(J:6>2)
+                                       30.953,32.713,32.995,34.107,34.414]) #5HJ(J:7>3)
+            elif ne==9: #Dy3+
+                pass
+            elif ne==10: #Ho3+
+                eig_previous=np.array([0.,5.087,8.647,11.255,13.349,18.211, #5IJ(J:8>4),5S2
+                                       15.403,18.387,20.568,21.113,22.365, #5FJ(J:5>1)
+                                       21.321,26.195,30.261,28.391,36.745,37.444, #3KJ(J:8>6),3HJ(J:6,4,5)
+                                       22.192,24.104,26.070,28.620,28.953, #5GJ(J:6,5,4,2,3)
+                                       31.094,30.726,35.859,36.802,33.296,38.584, #5G2',3FJ(J:4>2),3MJ(J:10,9)
+                                       28.421,33.862,37.673,33.921,35.125,36.267, #3LJ(J:9>7),3D3,5D4,1L8
+                                       33.973,36.700,38.521,38.214,39.215,39.654]) #3PJ(J:1,0,2),3IJ(J:7,5,6)
+            elif ne==11: #Er3+
+                pass
+            elif ne==12: #Tm3+
+                pass
+            elif ne==13: #Yb3+
+                pass
+            else:
+                pass
+        try:
+            print(np.sort(eig_previous.round(3)))
+            plt.scatter(eig_previous*0+0.01,eig_previous,marker='_',color='red')
+        except NameError:
             pass
-        if ne in {6,8}:
-            print(np.sort(eig_ofelt.round(3)))
-            plt.scatter(eig_ofelt*0+0.01,eig_ofelt,marker='_',color='red')
         plt.xlim(-0.05,0.05)
         plt.ylim(0,erange*eV2cm)
         plt.show()

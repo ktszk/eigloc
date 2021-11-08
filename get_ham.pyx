@@ -299,13 +299,15 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     ry=uni[:,:eigmax].T.conjugate().dot(ry0.dot(uni[:,:eigmax]))
     rz=uni[:,:eigmax].T.conjugate().dot(rz0.dot(uni[:,:eigmax]))
     r_spec=abs(rx)**2+abs(ry)**2+abs(rz)**2
+    r_spec2=abs(rx.dot(rx))+abs(ry.dot(ry))+abs(rz.dot(rz))
     print('calc elec dipole')
-    return mag_spec,r_spec,Jeig,Jcolor
+    return mag_spec,r_spec,r_spec2,Jeig,Jcolor
 
 def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.float64_t,ndim=1] eig,
                  cnp.ndarray[cnp.complex128_t,ndim=2] eigf,cnp.ndarray[cnp.int64_t,ndim=2] instates,
                  cnp.ndarray[cnp.int64_t,ndim=2] sp1,double erange, double temp, int lorb, 
-                 cnp.ndarray[cnp.int64_t,ndim=2] JRGB,double ie_max=2.0, double de_max=3.0, double de_min=1.e-3, double id=1.0e-3, int wmesh=2000):
+                 cnp.ndarray[cnp.int64_t,ndim=2] JRGB,double ie_max=2.0, double de_max=3.0,
+                 double de_min=1.e-3, double id=1.0e-3, int wmesh=2000):
     """
     generate spectrum
     """
@@ -314,7 +316,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
 
 
     rsq=0.4376**2
-    mnn2,mnn,Jeig,Jcolor=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb,JRGB)
+    mnn2,mnn,mnn3,Jeig,Jcolor=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb,JRGB)
     arrows=[]
     for i,mn in enumerate(mnn):
         for j0,m in enumerate(mn[i+1:]):
@@ -335,13 +337,30 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
                 pass
 
     fig=plt.figure()
-    ax1=fig.add_subplot(211)
-    maps=ax1.imshow(mnn.round(3),cmap=plt.cm.jet,interpolation='nearest')
-    fig.colorbar(maps,ax=ax1)
+    ax11=fig.add_subplot(321)
+    maps=ax11.imshow(mnn.round(3),cmap=plt.cm.jet,interpolation='nearest')
+    fig.colorbar(maps,ax=ax11)
+    ax12=fig.add_subplot(322)
+    maps=ax12.imshow(mnn3.round(3),cmap=plt.cm.jet,interpolation='nearest')
+    fig.colorbar(maps,ax=ax12)
+
+    ax21=fig.add_subplot(323)
+    warray=np.linspace(0,2*erange,eig_int_max)
+    wl,el=np.meshgrid(warray,eig[:eig_int_max]-eig[0])
+    we_uni=id/((wl-el)**2+id**2)
+    pmap=we_uni.T.dot((mnn+mnn2).dot(we_uni))
+    maps=ax21.contourf(wl,wl.T,pmap,levels=100,cmap=plt.cm.jet,interpolation='nearest')
+    fig.colorbar(maps,ax=ax21)
+    ax22=fig.add_subplot(324)
+    pmap=we_uni.T.dot((mnn3+mnn2).dot(we_uni))
+    maps=ax22.contourf(wl,wl.T,pmap,levels=100,cmap=plt.cm.jet,interpolation='nearest')
+    fig.colorbar(maps,ax=ax22)
+
+    ax3=fig.add_subplot(313)
+    ax3.plot(range(eig_int_max),mnn[0,:])
     fig.savefig('mnn_map.png')
-    ax2=fig.add_subplot(212)
-    ax2.plot(range(eig_int_max),mnn[0,:])
-    mnn=mnn.flatten()
+
+    mnn3=mnn3.flatten()
     mnn2=mnn2.flatten()
     eig0=(eig-eig[0])[:eig_int_max]
     func=np.exp(-eig0/temp)
@@ -349,7 +368,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     eigf0=eigf.T[:eig_int_max]
     deig=np.array([[e1-e2 for e1 in eig0] for e2 in eig0]).flatten()
     dfunc=np.array([[e2-e1 for e1 in func] for e2 in func]).flatten()
-    chi=rsq*np.array([(mnn*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
+    chi=rsq*np.array([(mnn3*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
     chi2=np.array([(mnn2*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
     return wlen,chi,chi2,Jeig,Jcolor,arrows,arrows_mag
 
