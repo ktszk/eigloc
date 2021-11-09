@@ -33,12 +33,12 @@ F0= 14.7508
 #Up=0.0429
 #zeta=0.1327
 #Eu3+ ofelt
-Up  = 0.04972
-zeta= 0.16366
+#Up  = 0.04972
+#zeta= 0.16366
 #Up  = 0.0494
 #zeta= 0.1635
-Up  = 0.0503
-zeta= 0.1960
+#Up  = 0.0503
+#zeta= 0.1960
 #Tb3+ ofelt
 #Up  = 0.05381
 #zeta= 0.21139
@@ -377,7 +377,23 @@ def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
     if True:
         hop2=gen_hop()
         print(hop2.real.round(2))
-        (eig2,uni)=sl.eigh(hop2)
+        uni0=np.zeros((ns,ns),dtype=complex)
+        for i in range(ns//2):
+            if i==lorb:
+                uni0[i,i]=1.
+                uni0[i+ns//2,i+ns//2]=1.
+            elif i<lorb:
+                uni0[i,i]=-1j/np.sqrt(2.)
+                uni0[i,2*lorb-i]=1/np.sqrt(2.)
+                uni0[i+ns//2,i+ns//2]=-1j/np.sqrt(2.)
+                uni0[i+ns//2,2*lorb-i+ns//2]=1/np.sqrt(2.)
+            else:
+                uni0[i,i]=(-1.)**((i-1)%2)/np.sqrt(2.)
+                uni0[i,2*lorb-i]=(-1)**((i-1)%2)*1j/np.sqrt(2.)
+                uni0[i+ns//2,i+ns//2]=(-1)**(i%2)/np.sqrt(2.)
+                uni0[i+ns//2,2*lorb-i+ns//2]=(-1)**(i%2)*1j/np.sqrt(2.)
+        (eig2,uni2)=sl.eigh(hop2)
+        uni=uni0.conjugate().dot(uni2)
         f2=lambda mu: ne+.5*(np.tanh(0.5*(eig2-mu)/temp)-1.).sum()
         mu2=scopt.brentq(f2,eig2.min(),eig2.max())
         print((eig2-mu2).round(3))
