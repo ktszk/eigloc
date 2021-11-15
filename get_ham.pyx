@@ -381,27 +381,34 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
     cdef long i,j,k,l,m
     cdef double mu
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham, ham_I=np.zeros((ns,ns),dtype='c16')
+    #original interaction g_m1m2m3m4c^+_m1c^+_m2c_m4c_m3
     cp=gencp(lorb+1,lorb,lorb)
     G=lambda m1,m2,m3,m4:(-1)**abs(m1-m3)*(F[:lorb+1]*cp[m1,m3]*cp[m2,m4]).sum()
     ini_n=np.array(init_n)
     n1=np.diag(ini_n)
     for k in range(itemax):
-        ham_I=ham_I*0.
+        ham_I*=0.
+        #i,m,j,l>m1,m2,m3,m4
         for i in range(ns//2):
-            # onsite
+            # intra orb (consider i==j and m==l (m1==m3 and m2==m4))
             ham_I[i,i]=((U[i,:]*n1.diagonal()[ns//2:]).sum()
                           +np.delete((U[i,:]-J[i,:]+dU[i,:])*n1.diagonal()[:ns//2],i).sum())
             ham_I[i+ns//2,i+ns//2]=((U[i,:]*n1.diagonal()[:ns//2]).sum()
                                       +np.delete((U[i,:]-J[i,:]+dU[i,:])*n1.diagonal()[ns//2:],i).sum())
-            for j in range(i+1,ns//2): #offsite
-                for l in range(ns//2):
-                    m=l+i-j
-                    ham_I[i,j]=ham_I[i,j]+G(i,l,j,m)*n1[l+ns//2,m+ns//2]
-                    ham_I[i,j]=ham_I[i,j]+(G(i,l,j,m)-G(i,l,m,j))*n1[l,m]
-                    ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+G(i,l,j,m)*n1[l,m]
-                    ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+(G(i,l,j,m)-G(i,l,m,j))*n1[l+ns//2,m+ns//2]
-                    #ham_I[i,j+ns//2]=ham_I[i,j+ns//2]+G(i,l,m,j)*n1[l+ns//2,m]
-                    #ham_I[i+ns//2,j]=ham_I[i+ns//2,j]+G(i,l,m,j)*n1[l,m+ns//2]
+            for j in range(i+1,ns//2): #inter orb (m1!=m3)
+                #first we consider i==l and j==m (m1=m4 and m2=m3)
+                ham_I[i,j]=J[i,j]*n1[j+ns//2,i+ns//2]+(J[i,j]-U[i,j]-dU[i,j])*n1[j,i]
+                ham_I[i+ns//2,j+ns//2]=J[i,j]*n1[i,j]+(J[i,j]-U[i,j]-dU[i,j])*n1[j+ns//2,i+ns//2]
+                #consider other m1+m2=m3+m4
+                for l in range(i+1,ns//2): #m1!=m4
+                    m=l+j-i #i+m=j+l
+                    if m<ns//2:
+                        ham_I[i,j]=ham_I[i,j]+G(i,m,j,l)*n1[m+ns//2,l+ns//2]
+                        ham_I[i,j]=ham_I[i,j]+(G(i,m,j,l)-G(i,m,l,j))*n1[m,l]
+                        ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+G(i,m,j,l)*n1[m,l]
+                        ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+(G(i,m,j,l)-G(i,m,l,j))*n1[m+ns//2,l+ns//2]
+                        #ham_I[i,j+ns//2]=ham_I[i,j+ns//2]+G(i,m,l,j)*n1[m+ns//2,l]
+                        #ham_I[i+ns//2,j]=ham_I[i+ns//2,j]+G(i,m,l,j)*n1[m,l+ns//2]
                 ham_I[j,i]=ham_I[i,j].conjugate()
                 ham_I[j+ns//2,i+ns//2]=ham_I[i+ns//2,j+ns//2].conjugate()
                 #ham_I[j+ns//2,i]=ham_I[i,j+ns//2].conjugate()
@@ -425,6 +432,7 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
             break
         else:
             n1=new_n
+            print(n1)
     else:
         if switch:
             print('no converged')

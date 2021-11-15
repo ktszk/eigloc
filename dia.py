@@ -8,23 +8,23 @@ import matplotlib.pyplot as plt
 import get_ham
 #from numba import jit
 
-lorb=3
-ne=7 #electron filling
+lorb=2
+ne=3 #electron filling
 
 #zeta= 0.191651
 
-F0p=0.5693
-F0= 14.7508
+#F0p=0.5693
+#F0= 14.7508
 #Up= 5.7901e-2
 #B40= 1.92436e-3
 #B60= 3.91589e-5
 
 #check_d
-#zeta=0.1
-#F0p=4.3220999
-#F0=1.05931263
-#Up=0.06480558
-#B40=0.002
+zeta=0.0
+F0=14.3220999
+F0p=0.5931263
+Up=0.0 #6480558
+B40=0.002
 
 #Pr3+
 #Up=0.0379
@@ -49,10 +49,11 @@ F0= 14.7508
 #init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
 #        0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
+init_n=[.5,1.,0.,1.,.5,0.,0.,0.,0.,0.]
 JRPG=np.array([[0,3,3],[6,3,3],[0,2,2]])
 
 cf_type=1
-erange=5.0 #plot energy range
+erange=2.0 #plot energy range
 idelta=1.e-4
 temp=2.6e-2 #~300K
 
@@ -61,7 +62,7 @@ iemax=3.          #max initial energy value
 demax=3.5         #max transition energy to plot arrows
 demin=1.e-3       #min tansition energy to plot arrows
 
-compair_ham=False #switch compair MF and QSGW hamiltonian or not
+compair_ham=True  #switch compair MF and QSGW hamiltonian or not
 sw_conv=False     #switch calc parameters or not
 sw_conv_cf=True   #switch consider crystal field or not
 sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
@@ -72,7 +73,7 @@ sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
 sw_cfsoc=False    #switch crystal field basis j or l,s
 sw_arrows=True    #switch plot arrows correspond to transtion (<l|r or 2s+l|m>^2<1e-3)
 sw_add_pdata=False
-sw_dd=True
+sw_dd=False
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -370,11 +371,13 @@ def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
         ham=get_ham.get_HF_full(ns,ne,init_n,hop,U,J,dU,F,temp,lorb=lorb)
     else:
         ham=get_HF(hop,U,J,temp)
+    print(ham.round(3))
     (eig,uni)=sl.eigh(ham)
     #print(ham.round(3))
     print((eig).round(3))
+    print((abs(uni)**2).round(2))
     plt.scatter([0]*ns,eig,marker='_')
-    if True:
+    if False:
         hop2=gen_hop()
         print(hop2.real.round(2))
         uni0=np.zeros((ns,ns),dtype=complex)
@@ -617,6 +620,7 @@ def main():
         f.close()
         print(U.round(4))
         print(J.round(4))
+        print(dU.round(4))
         eig2=np.unique(eig[:eigmax].round(3))
         degenerate=np.array([np.where(eig.round(3)==i)[0].size for i in eig2])
         for ide,ideg in zip(eig2.round(3),degenerate):
