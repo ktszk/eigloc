@@ -42,7 +42,7 @@ def get_dU(F0,int l=3):
     cdef cnp.ndarray[cnp.float64_t,ndim=2] dU
 
     cp=gencp(l+1,l,l)
-    dulm= lambda m1,m2: (abs(F0)*cp[m1,m1,0]*cp[m2,m2,0])
+    dulm= lambda m1,m2: (F0*cp[m1,m1,0]*cp[m2,m2,0])
     dU=np.array([[float(dulm(i,j)) for i in range(lmax)] for j in range(lmax)])
     return dU
 
@@ -432,7 +432,6 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
             break
         else:
             n1=new_n
-            print(n1)
     else:
         if switch:
             print('no converged')
