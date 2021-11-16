@@ -620,7 +620,7 @@ def main():
         f.close()
         print(U.round(4))
         print(J.round(4))
-        print(dU.round(4))
+        #print(dU.round(4))
         eig2=np.unique(eig[:eigmax].round(3))
         degenerate=np.array([np.where(eig.round(3)==i)[0].size for i in eig2])
         for ide,ideg in zip(eig2.round(3),degenerate):

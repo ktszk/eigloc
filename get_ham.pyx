@@ -384,8 +384,32 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
     #original interaction g_m1m2m3m4c^+_m1c^+_m2c_m4c_m3
     cp=gencp(lorb+1,lorb,lorb)
     G=lambda m1,m2,m3,m4:(-1)**abs(m1-m3)*(F[:lorb+1]*cp[m1,m3]*cp[m2,m4]).sum()
-    ini_n=np.array(init_n)
-    n1=np.diag(ini_n)
+    if len(init_n)<ns:
+        n1=np.zeros((ns,ns),dtype='c16')
+        i=0
+        flags=True
+        for f in open('dmat_QSGW','r'):
+            if f.find('spin')==-1:
+                tmp=f.split()
+                if len(tmp)>1:
+                    for j,tp in enumerate(tmp):
+                        if flags:
+                            if i<ns//2:
+                                n1[i,j]=float(tp)
+                            else:
+                                n1[i-ns//2,j]=n1[i-ns//2,j]+1j*float(tp)
+                        else:
+                            if i<ns//2:
+                                n1[i+ns//2,j+ns//2]=float(tp)
+                            else:
+                                n1[i,j+ns//2]=n1[i,j+ns//2]+1j*float(tp)
+                    if i<ns-1:
+                        i+=1
+                    else:
+                        i=0
+                        flags=False
+    else:
+        n1=np.diag(np.array(init_n))
     for k in range(itemax):
         ham_I*=0.
         #i,m,j,l>m1,m2,m3,m4
