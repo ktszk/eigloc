@@ -1,7 +1,9 @@
-# cython: profile=True
+# -*^ coding: utf-8 -*-
+# cython: profile=False
 import numpy as np
 cimport cython
 cimport numpy as cnp
+import sympy as syp
 from sympy.physics.wigner import gaunt
 import scipy.linalg as sl
 import scipy.optimize as scopt
@@ -14,40 +16,42 @@ def gencp(int p,int l,int m):
     """
     generate Gaunt coefficient
     """
-    lmax=p-1
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
-    def get_gaunt(p,m,l):
-        return float(gaunt(lmax,p,lmax,-l,l-m,m))*np.sqrt(4.*np.pi/(2.*p+1.))*(-1)**l
+    cdef long lmax=p-1, ll, mm, pp
+    def get_gaunt(int p,int m,int l):
+        return float(gaunt(lmax,p,lmax,-l,l-m,m)*2.*syp.sqrt(syp.pi/(2.*p+1.)))*(-1)**l
     cp=np.array([[[get_gaunt(2*pp,ll-l,mm-l) for pp in range(p)] 
                   for mm in range(2*m+1)] for ll in range(2*l+1)])
     return cp
 
-def UJ(F,int l=3):
+def UJ(cnp.ndarray[cnp.float64_t,ndim=1] F,int l=3):
     """
     generate onsite interaction U,J
     """
     cdef long m1,m2,i,j,lmax=2*l+1
     cdef cnp.ndarray[cnp.float64_t,ndim=2] U,J
+    cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
 
     cp=gencp(l+1,l,l)
-    Ulm=lambda m1,m2: (F[:l+1]*cp[m1,m1]*cp[m2,m2]).sum()
-    Jlm=lambda m1,m2: (F[:l+1]*cp[m1,m2]**2).sum()
-    U=np.array([[float(Ulm(i,j)) for i in range(lmax)] for j in range(lmax)])
-    J=np.array([[float(Jlm(i,j)) for i in range(lmax)] for j in range(lmax)])
+    Ulm=lambda m1,m2,cp,F: (F[:l+1]*cp[m1,m1]*cp[m2,m2]).sum()
+    Jlm=lambda m1,m2,cp,F: (F[:l+1]*cp[m1,m2]**2).sum()
+    U=np.array([[float(Ulm(i,j,cp,F)) for i in range(lmax)] for j in range(lmax)])
+    J=np.array([[float(Jlm(i,j,cp,F)) for i in range(lmax)] for j in range(lmax)])
     J=J-np.diag(J.diagonal())
     return U,J
 
-def get_dU(F0,int l=3):
+def get_dU(double F0,int l=3):
     cdef long m1,m2,i,j,lmax=2*l+1
     cdef cnp.ndarray[cnp.float64_t,ndim=2] dU
+    cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
 
     cp=gencp(l+1,l,l)
-    dulm= lambda m1,m2: (F0*cp[m1,m1,0]*cp[m2,m2,0])
-    dU=np.array([[float(dulm(i,j)) for i in range(lmax)] for j in range(lmax)])
+    dulm= lambda m1,m2,cp,F0: (F0*cp[m1,m1,0]*cp[m2,m2,0])
+    dU=np.array([[float(dulm(i,j,cp,F0)) for i in range(lmax)] for j in range(lmax)])
     return dU
 
 def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_t,ndim=2] uni,
-          cnp.ndarray[cnp.int64_t,ndim=2] instates,cnp.ndarray[cnp.int64_t,ndim=2] sp1,int eigmax,int lmax=3):
+          cnp.ndarray[cnp.int64_t,ndim=2] instates, cnp.ndarray[cnp.int64_t,ndim=2] sp1, int eigmax, int lmax=3):
     """
     calculate total/orbital/spin angular momentum J,L,S and generate magnetic dipole
     details of argments
@@ -314,7 +318,6 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     cdef long eig_int_max=(np.where(eig<=2.*erange+eig[0])[0]).size
     cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig,wlen=np.linspace(0,erange,wmesh)
 
-
     rsq=0.4376**2
     mnn2,mnn,mnn3,Jeig,Jcolor=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb,JRGB)
     arrows=[]
@@ -372,18 +375,20 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     chi2=np.array([(mnn2*dfunc/(complex(iw,id)+deig)).sum().imag for iw in wlen])
     return wlen,chi,chi2,Jeig,Jcolor,arrows,arrows_mag
 
-def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
-                cnp.ndarray[cnp.float64_t,ndim=2] J, cnp.ndarray[cnp.float64_t,ndim=2] dU, F,
-                double temp=1.0e-9,double eps=1.0e-6,int itemax=1000,switch=True,lorb=3):
+def get_HF_full(int ns, int ne, init_n, ham0, cnp.ndarray[cnp.float64_t,ndim=2] U,
+                cnp.ndarray[cnp.float64_t,ndim=2] J, cnp.ndarray[cnp.float64_t,ndim=2] dU,
+                cnp.ndarray[cnp.float64_t,ndim=1] F, double temp=1.0e-9,double eps=1.0e-6,
+                int itemax=1000,switch=True,lorb=3):
     """
     calculate MF hamiltonian with full Coulomb interactions
     """
     cdef long i,j,k,l,m
     cdef double mu
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham, ham_I=np.zeros((ns,ns),dtype='c16')
+    cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
     #original interaction g_m1m2m3m4c^+_m1c^+_m2c_m4c_m3
     cp=gencp(lorb+1,lorb,lorb)
-    G=lambda m1,m2,m3,m4:(-1)**abs(m1-m3)*(F[:lorb+1]*cp[m1,m3]*cp[m2,m4]).sum()
+    G=lambda m1,m2,m3,m4,cp,F:(-1)**abs(m1-m3)*(F[:lorb+1]*cp[m1,m3]*cp[m2,m4]).sum()
     if len(init_n)<ns:
         n1=np.zeros((ns,ns),dtype='c16')
         i=0
@@ -427,12 +432,18 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
                 for l in range(i+1,ns//2): #m1!=m4
                     m=l+j-i #i+m=j+l
                     if m<ns//2:
-                        ham_I[i,j]=ham_I[i,j]+G(i,m,j,l)*n1[m+ns//2,l+ns//2]
-                        ham_I[i,j]=ham_I[i,j]+(G(i,m,j,l)-G(i,m,l,j))*n1[m,l]
-                        ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+G(i,m,j,l)*n1[m,l]
-                        ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+(G(i,m,j,l)-G(i,m,l,j))*n1[m+ns//2,l+ns//2]
-                        #ham_I[i,j+ns//2]=ham_I[i,j+ns//2]+G(i,m,l,j)*n1[m+ns//2,l]
-                        #ham_I[i+ns//2,j]=ham_I[i+ns//2,j]+G(i,m,l,j)*n1[m,l+ns//2]
+                        if i==2*lorb-m: #m1=-m2, m3=-m4 (correspond to pair hoppings)
+                            ham_I[i,j]=ham_I[i,j]+(-1)**(j-i)*J[i,j]*n1[m+ns//2,l+ns//2]
+                            ham_I[i,j]=ham_I[i,j]+((-1)**(j-i)*J[i,j]-G(i,m,l,j,cp,F))*n1[m,l]
+                            ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+(-1)**(j-i)*J[i,j]*n1[m,l]
+                            ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+((-1)**(j-i)*J[i,j]-G(i,m,l,j,cp,F))*n1[m+ns//2,l+ns//2]
+                        else:
+                            ham_I[i,j]=ham_I[i,j]+G(i,m,j,l,cp,F)*n1[m+ns//2,l+ns//2]
+                            ham_I[i,j]=ham_I[i,j]+(G(i,m,j,l,cp,F)-G(i,m,l,j,cp,F))*n1[m,l]
+                            ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+G(i,m,j,l,cp,F)*n1[m,l]
+                            ham_I[i+ns//2,j+ns//2]=ham_I[i+ns//2,j+ns//2]+(G(i,m,j,l,cp,F)-G(i,m,l,j,cp,F))*n1[m+ns//2,l+ns//2]
+                            #ham_I[i,j+ns//2]=ham_I[i,j+ns//2]+G(i,m,l,j,cp,F)*n1[m+ns//2,l]
+                            #ham_I[i+ns//2,j]=ham_I[i+ns//2,j]+G(i,m,l,j,cp,F)*n1[m,l+ns//2]
                 ham_I[j,i]=ham_I[i,j].conjugate()
                 ham_I[j+ns//2,i+ns//2]=ham_I[i+ns//2,j+ns//2].conjugate()
                 #ham_I[j+ns//2,i]=ham_I[i,j+ns//2].conjugate()
@@ -463,9 +474,9 @@ def get_HF_full(int ns,int ne,init_n,ham0,cnp.ndarray[cnp.float64_t,ndim=2] U,
             print(new_n.round(3))
     return(ham-mu*np.identity(ns))
 
-def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float64_t,ndim=2] U,
-            cnp.ndarray[cnp.float64_t,ndim=2] J, int ns,cnp.ndarray[cnp.float64_t,ndim=1] F,
-            int l=3,sw_all_g=True,sw_ph=False):
+def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
+            cnp.ndarray[cnp.float64_t,ndim=2] J, int ns, cnp.ndarray[cnp.float64_t,ndim=1] F,
+            int l=3,sw_all_g=True):
     """
     get many-body hamiltonian
     """
@@ -475,6 +486,7 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
 
     cp=gencp(l+1,l,l)
+    G=lambda m1,m2,m3,m4,cp,F:(-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
     for i,ist in enumerate(wf):
         for j0,jst in enumerate(wf[i:]):
             j=j0+i
@@ -501,7 +513,7 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float
                             ham[i,i]=ham[i,i]+U[j2,i2]-J[j2,i2]
                         else: #spin anti parallel
                             ham[i,i]=ham[i,i]+U[j2,i2]
-            elif(tmp==2): #hoppings one body
+            elif(tmp==2): #hoppings one body (soc and crystal field)
                 tmp1=ist-jst
                 j2=np.where(tmp1==-1)[0][0]
                 i2=np.where(tmp1==1)[0][0]
@@ -509,18 +521,16 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float
                 ham[i,j]=sgn*hop[i2,j2]
             elif(tmp==4): #four operators two body
                 tmp1=ist-jst
-                if(tmp1[:ns//2].sum()==0): #spin conservation
+                if(tmp1[:ns//2].sum()==0): #spin conservation rule
                     m3=np.where(tmp1==-1)[0][0] #1st one anihilate
                     m4=np.where(tmp1==-1)[0][1] #2nd one anihilate
                     m1=np.where(tmp1==1)[0][0]  #1st one create
                     m2=np.where(tmp1==1)[0][1]  #2nd one create
-                    nst=jst[:m3].sum()+jst[:m4].sum()-1
-                    nen=ist[:m1].sum()+ist[:m2].sum()-1
-                    sgn=(-1)**(nst+nen)
+                    nst=jst[:m3].sum()+jst[:m4].sum()-1 #sign flip from anihilation op.
+                    nen=ist[:m1].sum()+ist[:m2].sum()-1 #sign flip from creation op. 
+                    sgn=(-1)**(nst+nen) #total flip
                     if(abs(tmp1[:ns//2]+tmp1[ns//2:]).sum()==0): #Hund's couplings m1=m4,m2=m3
                         ham[i,j]=J[m1,m3]*sgn
-                    elif(sw_ph and (abs(tmp1[:ns//2]-tmp1[ns//2:]).sum()==0)): #pair hoppings m1=m2,m3=m4
-                        ham[i,j]=J[m1,m3]*sgn*(-1)**abs(m1-m3)
                     elif(sw_all_g):
                         if(m3>=ns//2):
                             m3=m3-ns//2
@@ -531,12 +541,10 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf,hop,int nwf,cnp.ndarray[cnp.float
                         if(m2>=ns//2):
                             m2=m2-ns//2
                         if((m1+m2-(m3+m4))==0): #delta(m1+m2,m3+m4)
+                            ham[i,j]=G(m1,m2,m3,m4,cp,F)*sgn
                             if(abs(tmp1[:ns//2]).sum()==2): #spin anti-parallel
-                                G=(-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
+                                pass
                             else: #spin parallel
-                                G=((-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
-                                   -(-1)**abs(m2-m3)*(F[:l+1]*cp[m2,m3]*cp[m1,m4]).sum())
-                                #print(m1,m2,m4,m3,G.round(4))
-                            ham[i,j]=G*sgn
+                                ham[i,j]=ham[i,j]-G(m2,m1,m3,m4,cp,F)*sgn
             ham[j,i]=ham[i,j].conjugate()
     return(ham)
