@@ -17,8 +17,8 @@ def gencp(int p,int l,int m):
     generate Gaunt coefficient
     """
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
-    cdef long lmax=p-1, ll, mm, pp
-    def get_gaunt(int p,int m,int l):
+    cdef long lmax=p-1, ll, pp, mm
+    def get_gaunt( p, m, l):
         return float(gaunt(lmax,p,lmax,-l,l-m,m)*2.*syp.sqrt(syp.pi/(2.*p+1.)))*(-1)**l
     cp=np.array([[[get_gaunt(2*pp,ll-l,mm-l) for pp in range(p)] 
                   for mm in range(2*m+1)] for ll in range(2*l+1)])

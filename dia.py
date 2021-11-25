@@ -8,23 +8,23 @@ import matplotlib.pyplot as plt
 import get_ham
 #from numba import jit
 
-lorb=2
-ne=3 #electron filling
+lorb=3
+ne=6 #electron filling
 
-#zeta= 0.191651
+zeta= 0. #191651
 
-#F0p=0.5693
-#F0= 14.7508
-#Up= 5.7901e-2
+F0p= 0. #5808
+F0 =14.7312
+Up = 5.8756e-2
 #B40= 1.92436e-3
 #B60= 3.91589e-5
 
 #check_d
-zeta=0.0
-F0=14.3220999
-F0p=0.5931263
-Up=0.0 #6480558
-B40=0.002
+#zeta=0.0
+#F0=14.3220999
+#F0p=0.5931263
+#Up=0.0 #6480558
+#B40=0.002
 
 #Pr3+
 #Up=0.0379
@@ -46,10 +46,10 @@ B40=0.002
 #Up=0.0558
 #zeta=0.2682
 
-#init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
-#        0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
+init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
+        0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
-init_n=[.5,1.,0.,1.,.5,0.,0.,0.,0.,0.]
+#init_n=[.5,1.,0.,1.,.5,0.,0.,0.,0.,0.]
 JRPG=np.array([[0,3,3],[6,3,3],[0,2,2]])
 
 cf_type=1
@@ -64,7 +64,7 @@ demin=1.e-3       #min tansition energy to plot arrows
 
 compair_ham=True  #switch compair MF and QSGW hamiltonian or not
 sw_conv=False     #switch calc parameters or not
-sw_conv_cf=True   #switch consider crystal field or not
+sw_conv_cf=False  #switch consider crystal field or not
 sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
 sw_spec=False     #switch calc spectrum and grotrian diagram or not
 sw_F_type=0       #switch set F setting 
@@ -251,22 +251,24 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
         else: #l basis (wosoc cf)
             if cf_type in {1,2}:
                 if lorb==3:
-                    O4=np.diag([ 3., -7.,  1., 6., 1., -7., 3., 3.,-7., 1., 6., 1., -7., 3.])
-                    O6=np.diag([ 1., -6., 15., -20., 15., -6., 1., 1., -6., 15., -20., 15.,-6., 1.])
+                    O4=np.diag([ 3., -7.,  1.,   6.,  1., -7., 3.,
+                                 3., -7.,  1.,   6.,  1., -7., 3.]) #renormailze 60
+                    O6=np.diag([ 1., -6., 15., -20., 15., -6., 1.,
+                                 1., -6., 15., -20., 15., -6., 1.]) #renormamize 180
                     if cf_type==1:
                         #O44,l=3
                         O4[0,4]=np.sqrt(15.)
                         O4[4,0]=O4[0,4]
                         O4[2,6]=O4[0,4]
-                        O4[6,2]=O4[0,4]
+                        O4[6,2]=O4[2,6]
                         O4[7,11]=O4[0,4]
-                        O4[11,7]=O4[0,4]
+                        O4[11,7]=O4[7,11]
                         O4[9,13]=O4[0,4]
-                        O4[13,9]=O4[0,4]
+                        O4[13,9]=O4[9,13]
                         O4[1,5]=5.
                         O4[5,1]=O4[1,5]
                         O4[8,12]=O4[1,5]
-                        O4[12,8]=O4[1,5]
+                        O4[12,8]=O4[8,12]
                         #O64,l=3
                         O6[0,4]=-7*np.sqrt(15)
                         O6[4,0]=O6[0,4]
@@ -276,7 +278,7 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                         O6[11,7]=O6[7,11]
                         O6[9,13]=O6[0,4]
                         O6[13,9]=O6[9,13]
-                        O6[1,5]=21.
+                        O6[1,5]=42.
                         O6[5,1]=O6[1,5]
                         O6[8,12]=O6[1,5]
                         O6[12,8]=O6[8,12]
@@ -377,9 +379,9 @@ def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
     print((eig).round(3))
     print((abs(uni)**2).round(2))
     plt.scatter([0]*ns,eig,marker='_')
-    if False:
+    if True:
         hop2=gen_hop()
-        print(hop2.real.round(2))
+        #print(hop2.real.round(2))
         uni0=np.zeros((ns,ns),dtype=complex)
         for i in range(ns//2):
             if i==lorb:
