@@ -6,15 +6,18 @@ import scipy.optimize as scopt
 import itertools as itts
 import matplotlib.pyplot as plt
 import get_ham
+import scipy.sparse as sspa
+import scipy.sparse.linalg as ssl
+
 #from numba import jit
 
 lorb=3
 ne=6 #electron filling
 
-zeta= 0. #191651
+zeta= 0.191651
 
-F0p= 0. #5808
-F0 =14.7312
+F0p= 0.5808
+F0 = 14.7312
 Up = 5.8756e-2
 #B40= 1.92436e-3
 #B60= 3.91589e-5
@@ -53,20 +56,22 @@ init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
 JRPG=np.array([[0,3,3],[6,3,3],[0,2,2]])
 
 cf_type=1
-erange=2.0 #plot energy range
+erange=4.0 #plot energy range
+num_eig=400
 idelta=1.e-4
 temp=2.6e-2 #~300K
+sw_spa=True #sparse matrix or not
 
 #for arrows plotting
 iemax=3.          #max initial energy value
 demax=3.5         #max transition energy to plot arrows
 demin=1.e-3       #min tansition energy to plot arrows
 
-compair_ham=True  #switch compair MF and QSGW hamiltonian or not
+compair_ham=False #switch compair MF and QSGW hamiltonian or not
 sw_conv=False     #switch calc parameters or not
 sw_conv_cf=False  #switch consider crystal field or not
 sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
-sw_spec=False     #switch calc spectrum and grotrian diagram or not
+sw_spec=True      #switch calc spectrum and grotrian diagram or not
 sw_F_type=0       #switch set F setting 
 sw_unit=False      #True cm^-1 False eV
 sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
@@ -172,22 +177,27 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
     generate H_soc and H_cf
     """
     #soc
-    (B40,B60,B20,B66)=Blm
-    mmax=.5*(ns//2-1)
-    lsdiag=np.diag(np.array([(l-mmax) for l in range(ns//2)]))*.5
-    lspm=np.zeros((ns//2,ns//2))
-    if sw_ls: #if False, consider only lzsz
-        for l in range(ns//2-1):
-            m=l+1-mmax
-            #print(np.sqrt((mmax+m)*(mmax-m+1))*.5,mmax,l-mmax)
-            lspm[l,l+1]=np.sqrt((mmax+m)*(mmax-m+1))*.5
-    tmp=np.hstack((lsdiag,lspm))
-    tmp2=np.hstack((lspm.T,-lsdiag))
-    hopsoc=np.vstack((tmp,tmp2))*zeta    
-    #print(np.round(lspm,4))
-    #print(lsdiag)
-    #cf
+    if zeta==100:
+        pass
+    else:
+        mmax=.5*(ns//2-1)
+        lsdiag=np.diag(np.array([(l-mmax) for l in range(ns//2)]))*.5
+        lspm=np.zeros((ns//2,ns//2))
+        if sw_ls: #if False, consider only lzsz
+            for l in range(ns//2-1):
+                m=l+1-mmax
+                #print(np.sqrt((mmax+m)*(mmax-m+1))*.5,mmax,l-mmax)
+                lspm[l,l+1]=np.sqrt((mmax+m)*(mmax-m+1))*.5
+        tmp=np.hstack((lsdiag,lspm))
+        tmp2=np.hstack((lspm.T,-lsdiag))
+        hopsoc=np.vstack((tmp,tmp2))*zeta    
+        #print(np.round(lspm,4))
+        #print(lsdiag)
 
+    #cf
+    (B40,B60,B20,B66)=Blm
+    alpha=0.4 #(B44/(5B40)) if alpha and beta==1 cube
+    beta=0.3  #(B64/(21B60))
     if cf_type!=0:
         if wsoc_cf: #make Hcf from j basis stevens op.
             #make unitary matrix j2lm
@@ -249,15 +259,26 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
             else:
                 pass
         else: #l basis (wosoc cf)
-            if cf_type in {1,2}:
+            if cf_type in {1,2,3}:
                 if lorb==3:
                     O4=np.diag([ 3., -7.,  1.,   6.,  1., -7., 3.,
                                  3., -7.,  1.,   6.,  1., -7., 3.]) #renormailze 60
                     O6=np.diag([ 1., -6., 15., -20., 15., -6., 1.,
                                  1., -6., 15., -20., 15., -6., 1.]) #renormamize 180
-                    if cf_type==1:
+                    if cf_type in {2,3}:
+                        O2=np.diag([5.,0.,-3,-4,-3.,0.,5.,5.,0.,-3.,-4.,-3.,0.,5.])
+                    if cf_type in {1,3}:
+                        if cf_type==1:
+                            O4[0,4]=np.sqrt(15.)
+                            O4[1,5]=5.
+                            O6[0,4]=-7*np.sqrt(15)
+                            O6[1,5]=42.
+                        elif cf_type==3:
+                            O4[0,4]=np.sqrt(15.)*alpha
+                            O4[1,5]=5.*alpha
+                            O6[0,4]=-7*np.sqrt(15)*beta
+                            O6[1,5]=42.*beta
                         #O44,l=3
-                        O4[0,4]=np.sqrt(15.)
                         O4[4,0]=O4[0,4]
                         O4[2,6]=O4[0,4]
                         O4[6,2]=O4[2,6]
@@ -265,12 +286,10 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                         O4[11,7]=O4[7,11]
                         O4[9,13]=O4[0,4]
                         O4[13,9]=O4[9,13]
-                        O4[1,5]=5.
                         O4[5,1]=O4[1,5]
                         O4[8,12]=O4[1,5]
                         O4[12,8]=O4[8,12]
                         #O64,l=3
-                        O6[0,4]=-7*np.sqrt(15)
                         O6[4,0]=O6[0,4]
                         O6[2,6]=O6[0,4]
                         O6[6,2]=O6[6,2]
@@ -278,13 +297,13 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                         O6[11,7]=O6[7,11]
                         O6[9,13]=O6[0,4]
                         O6[13,9]=O6[9,13]
-                        O6[1,5]=42.
                         O6[5,1]=O6[1,5]
                         O6[8,12]=O6[1,5]
                         O6[12,8]=O6[8,12]
                         hopcf=B40*O4+3.*B60*O6
+                        if cf_type==3:
+                            hopcf+=B20*O2*.05
                     elif cf_type==2:
-                        O2=np.diag([5.,0.,-3,-4,-3.,0.,5.,5.,0.,-3.,-4.,-3.,0.,5.])
                         O66=np.zeros((ns,ns))
                         O66[0,6]=1.
                         O66[6,0]=O66[0,6]
@@ -554,11 +573,17 @@ def main():
             plot_hamHF(hop,U,J,dU,F)
         np.set_printoptions(linewidth=300)
         #print(wf)
-        ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F,l=lorb)
-        #plt.spy(abs(ham))
-        #plt.show()
-        #print(ham)
-        (eig,eigf)=sl.eigh(ham)
+        if sw_spa:
+            ham=get_ham.get_ham_spa(wf,hop,nwf,U,J,ns,F,l=lorb,spa_type='csr')
+            eig,eigf=ssl.eigsh(ham,k=num_eig,which='SM')
+            sarg=np.argsort(eig)
+            eig=eig[sarg]
+            eigf=(eigf.T[sarg]).T
+        else:
+            ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F,l=lorb)
+            plt.spy(abs(ham))
+            plt.show()
+            (eig,eigf)=sl.eigh(ham)
         eigmax=(np.where(eig<=erange+eig[0])[0]).size
         if sw_spec:
             """

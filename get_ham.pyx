@@ -1,4 +1,4 @@
-# -*^ coding: utf-8 -*-
+#-*- coding: utf-8 -*-
 # cython: profile=False
 import numpy as np
 cimport cython
@@ -474,46 +474,48 @@ def get_HF_full(int ns, int ne, init_n, ham0, cnp.ndarray[cnp.float64_t,ndim=2] 
             print(new_n.round(3))
     return(ham-mu*np.identity(ns))
 
-def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
+def get_ham_spa(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
             cnp.ndarray[cnp.float64_t,ndim=2] J, int ns, cnp.ndarray[cnp.float64_t,ndim=1] F,
-            int l=3,sw_all_g=True):
+            int l=3,sw_all_g=True,spa_type='crs'):
     """
     get many-body hamiltonian
     """
     cdef long i,j,j0,k,tmp,i0,i2,isgn,j2,jsgn,m1,m2,m3,m4
     cdef cnp.ndarray[cnp.int64_t,ndim=1] ist,jst,tmp1
-    cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham=np.zeros((nwf,nwf),dtype='c16')
+    #cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham=np.zeros((nwf,nwf),dtype='c16')
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
+
+    import scipy.sparse as sspa
+    ham=sspa.lil_matrix((nwf,nwf),dtype='c16')
 
     cp=gencp(l+1,l,l)
     G=lambda m1,m2,m3,m4,cp,F:(-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
     for i,ist in enumerate(wf):
-        for j0,jst in enumerate(wf[i:]):
-            j=j0+i
+        tmp1=np.where(ist==1)[0] #take occupy states
+        #print(tmp1)
+        ham[i,i]=hop[tmp1,tmp1].sum() #sum of on-site energy
+        for k, i0 in enumerate(tmp1): #consider U and U'
+            if(i0<ns//2): #up spin
+                i2=i0
+                isgn=1
+            else: #down spin
+                i2=i0-ns//2
+                isgn=-1
+            for j0 in tmp1[k+1:]: #consider only en0>st0
+                if(j0<ns//2): #up spin
+                    j2=j0
+                    jsgn=1
+                else: #down spin
+                    j2=j0-ns//2
+                    jsgn=-1
+                if isgn*jsgn==1: #spin parallel
+                    ham[i,i]=ham[i,i]+U[j2,i2]-J[j2,i2]
+                else: #spin anti parallel
+                    ham[i,i]=ham[i,i]+U[j2,i2]
+        for j0,jst in enumerate(wf[i+1:]):
+            j=j0+i+1
             tmp=abs(ist-jst).sum()
-            if(tmp==0): #on-site energy and interactions
-                tmp1=np.where(ist==1)[0] #take occupy states
-                #print(tmp1)
-                ham[i,i]=hop[tmp1,tmp1].sum() #sum of on-site energy
-                for k, i0 in enumerate(tmp1): #consider U and U'
-                    if(i0<ns//2): #up spin
-                        i2=i0
-                        isgn=1
-                    else: #down spin
-                        i2=i0-ns//2
-                        isgn=-1
-                    for j0 in tmp1[k+1:]: #consider only en0>st0
-                        if(j0<ns//2): #up spin
-                            j2=j0
-                            jsgn=1
-                        else: #down spin
-                            j2=j0-ns//2
-                            jsgn=-1
-                        if isgn*jsgn==1: #spin parallel
-                            ham[i,i]=ham[i,i]+U[j2,i2]-J[j2,i2]
-                        else: #spin anti parallel
-                            ham[i,i]=ham[i,i]+U[j2,i2]
-            elif(tmp==2): #hoppings one body (soc and crystal field)
+            if(tmp==2): #hoppings one body (soc and crystal field)
                 tmp1=ist-jst
                 j2=np.where(tmp1==-1)[0][0]
                 i2=np.where(tmp1==1)[0][0]
@@ -528,6 +530,83 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.fl
                     m2=np.where(tmp1==1)[0][1]  #2nd one create
                     nst=jst[:m3].sum()+jst[:m4].sum()-1 #sign flip from anihilation op.
                     nen=ist[:m1].sum()+ist[:m2].sum()-1 #sign flip from creation op. 
+                    sgn=(-1)**(nst+nen) #total flip
+                    if(abs(tmp1[:ns//2]+tmp1[ns//2:]).sum()==0): #Hund's couplings m1=m4,m2=m3
+                        ham[i,j]=J[m1,m3]*sgn
+                    elif(sw_all_g):
+                        if(m3>=ns//2):
+                            m3=m3-ns//2
+                        if(m4>=ns//2):
+                            m4=m4-ns//2
+                        if(m1>=ns//2):
+                            m1=m1-ns//2
+                        if(m2>=ns//2):
+                            m2=m2-ns//2
+                        if((m1+m2-(m3+m4))==0): #delta(m1+m2,m3+m4)
+                            ham[i,j]=G(m1,m2,m3,m4,cp,F)*sgn
+                            if(abs(tmp1[:ns//2]).sum()==2): #spin anti-parallel
+                                pass
+                            else: #spin parallel
+                                ham[i,j]=ham[i,j]-G(m2,m1,m3,m4,cp,F)*sgn
+            ham[j,i]=ham[i,j].conjugate()
+    if spa_type=='csr':
+        return(ham.tocsr())
+    else:
+        return(ham)
+
+def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
+           cnp.ndarray[cnp.float64_t,ndim=2] J, int ns, cnp.ndarray[cnp.float64_t,ndim=1] F,
+           int l=3,sw_all_g=True):
+    """
+    get many-body hamiltonian
+    """
+    cdef long i,j,j0,k,tmp,i0,i2,isgn,j2,jsgn,m1,m2,m3,m4
+    cdef cnp.ndarray[cnp.int64_t,ndim=1] ist,jst,tmp1
+    cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham=np.zeros((nwf,nwf),dtype='c16')
+    cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
+
+    cp=gencp(l+1,l,l)
+    G=lambda m1,m2,m3,m4,cp,F:(-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
+    for i,ist in enumerate(wf):
+        tmp1=np.where(ist==1)[0] #take occupy states
+        #print(tmp1)
+        ham[i,i]=hop[tmp1,tmp1].sum() #sum of on-site energy
+        for k, i0 in enumerate(tmp1): #consider U and U'
+            if(i0<ns//2): #up spin
+                i2=i0
+                isgn=1
+            else: #down spin
+                i2=i0-ns//2
+                isgn=-1
+            for j0 in tmp1[k+1:]: #consider only en0>st0
+                if(j0<ns//2): #up spin
+                    j2=j0
+                    jsgn=1
+                else: #down spin
+                    j2=j0-ns//2
+                    jsgn=-1
+                if isgn*jsgn==1: #spin parallel
+                    ham[i,i]=ham[i,i]+U[j2,i2]-J[j2,i2]
+                else: #spin anti parallel
+                    ham[i,i]=ham[i,i]+U[j2,i2]
+        for j0,jst in enumerate(wf[i+1:]):
+            j=j0+i+1
+            tmp=abs(ist-jst).sum()
+            if(tmp==2): #hoppings one body (soc and crystal field)
+                tmp1=ist-jst
+                j2=np.where(tmp1==-1)[0][0]
+                i2=np.where(tmp1==1)[0][0]
+                sgn=(-1)**(jst[:j2].sum()+ist[:i2].sum())
+                ham[i,j]=sgn*hop[i2,j2]
+            elif(tmp==4): #four operators two body
+                tmp1=ist-jst
+                if(tmp1[:ns//2].sum()==0): #spin conservation rule
+                    m3=np.where(tmp1==-1)[0][0] #1st one anihilate
+                    m4=np.where(tmp1==-1)[0][1] #2nd one anihilate
+                    m1=np.where(tmp1==1)[0][0]  #1st one create
+                    m2=np.where(tmp1==1)[0][1]  #2nd one create
+                    nst=jst[:m3].sum()+jst[:m4].sum()-1 #sign flip from anihilation op.
+                    nen=ist[:m1].sum()+ist[:m2].sum()-1 #sign flip from creation op.
                     sgn=(-1)**(nst+nen) #total flip
                     if(abs(tmp1[:ns//2]+tmp1[ns//2:]).sum()==0): #Hund's couplings m1=m4,m2=m3
                         ham[i,j]=J[m1,m3]*sgn
