@@ -3,6 +3,7 @@
 import numpy as np
 cimport cython
 cimport numpy as cnp
+from ctypes import *
 import sympy as syp
 from sympy.physics.wigner import gaunt
 import scipy.linalg as sl
@@ -325,7 +326,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
         for j0,m in enumerate(mn[i+1:]):
             j=i+j0+1
             if (abs(eig[i]-eig[0])<ie_max and abs(eig[j]-eig[0])<erange and de_min<abs(eig[j]-eig[i])<de_max) and m>ten:
-                print(eig[i]-eig[0],eig[i]-eig[j],i,j,m)
+                print(eig[i]-eig[0],eig[i]-eig[j],i,j)
                 arrows.append([i,j])
             else:
                 pass
@@ -556,77 +557,28 @@ def get_ham_spa(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cn
 
 def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
            cnp.ndarray[cnp.float64_t,ndim=2] J, int ns, cnp.ndarray[cnp.float64_t,ndim=1] F,
-           int l=3):
+           int l=3,sw_all_g=True):
     """
     get many-body hamiltonian
     """
-    cdef long i,j,j0,k,tmp,i0,i2,isgn,j2,jsgn,m1,m2,m3,m4
-    cdef cnp.ndarray[cnp.int64_t,ndim=1] ist,jst,tmp1
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham=np.zeros((nwf,nwf),dtype='c16')
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
 
+    fsub=np.ctypeslib.load_library("fsub.so",".")
     cp=gencp(l+1,l,l)
-    G=lambda m1,m2,m3,m4,cp,F:(-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
-    for i,ist in enumerate(wf):
-        tmp1=np.where(ist==1)[0] #take occupy states
-        ham[i,i]=hop[tmp1,tmp1].sum() #sum of on-site energy
-        for k, i0 in enumerate(tmp1): #consider U and U'
-            if(i0<ns//2): #up spin
-                i2=i0
-                isgn=1
-            else: #down spin
-                i2=i0-ns//2
-                isgn=-1
-            for j0 in tmp1[k+1:]: #consider only en0>st0
-                if(j0<ns//2): #up spin
-                    j2=j0
-                    jsgn=1
-                else: #down spin
-                    j2=j0-ns//2
-                    jsgn=-1
-                if isgn*jsgn==1: #spin parallel
-                    ham[i,i]=ham[i,i]+U[j2,i2]-J[j2,i2]
-                else: #spin anti parallel
-                    ham[i,i]=ham[i,i]+U[j2,i2]
-
-        for j0,jst in enumerate(wf[i+1:]): #off-diagonal
-            j=j0+i+1
-            tmp1=ist-jst
-            tmp=abs(tmp1).sum()
-            if(tmp==2): #hoppings one body (soc and crystal field)
-                j2=np.where(tmp1==-1)[0][0]
-                i2=np.where(tmp1==1)[0][0]
-                sgn=(-1)**(jst[:j2].sum()+ist[:i2].sum())
-                ham[i,j]=sgn*hop[i2,j2]
-            elif(tmp==4): #four operators two body
-                if(tmp1[:ns//2].sum()==0): #spin conservation rule
-                    m3=np.where(tmp1==-1)[0][0] #1st one anihilate
-                    m4=np.where(tmp1==-1)[0][1] #2nd one anihilate
-                    m1=np.where(tmp1==1)[0][0]  #1st one create
-                    m2=np.where(tmp1==1)[0][1]  #2nd one create
-                    nst=jst[:m3].sum()+jst[:m4].sum()-1 #sign flip from anihilation op.
-                    nen=ist[:m1].sum()+ist[:m2].sum()-1 #sign flip from creation op.
-                    sgn=(-1)**(nst+nen) #total flip
-                    if(abs(tmp1[:ns//2]+tmp1[ns//2:]).sum()==0): #Hund's couplings m1=m4,m2=m3
-                        ham[i,j]=J[m1,m3]*sgn
-                    else:
-                        if(m3>=ns//2):
-                            m3=m3-ns//2
-                        if(m4>=ns//2):
-                            m4=m4-ns//2
-                        if(m1>=ns//2):
-                            m1=m1-ns//2
-                        if(m2>=ns//2):
-                            m2=m2-ns//2
-                        if((m1+m2-(m3+m4))==0): #delta(m1+m2,m3+m4)
-                            ham[i,j]=G(m1,m2,m3,m4,cp,F)*sgn
-                            if(abs(tmp1[:ns//2]).sum()==2): #spin anti-parallel
-                                pass
-                            else: #spin parallel
-                                ham[i,j]=ham[i,j]-G(m2,m1,m3,m4,cp,F)*sgn
-            else:
-                continue
-            ham[j,i]=ham[i,j].conjugate()
+    lmax=byref(c_int64(l))
+    nwfin=byref(c_int64(nwf))
+    nsin=byref(c_int64(ns))
+    fsub.get_ham.argtypes=[np.ctypeslib.ndpointer(dtype=np.complex128), #ham
+                           np.ctypeslib.ndpointer(dtype=np.int64), #wf
+                           np.ctypeslib.ndpointer(dtype=np.complex128), #hop
+                           np.ctypeslib.ndpointer(dtype=np.float64), #Umat
+                           np.ctypeslib.ndpointer(dtype=np.float64), #Jmat
+                           np.ctypeslib.ndpointer(dtype=np.float64), #cp
+                           np.ctypeslib.ndpointer(dtype=np.float64), #F
+                           POINTER(c_int64),POINTER(c_int64),POINTER(c_int64)] #nwf,ns,lmax
+    fsub.get_ham.restype=c_void_p
+    fsub.get_ham(ham,wf,hop.astype("c16"),U,J,cp,F,nwfin,nsin,lmax)
     return(ham)
 
 def get_rdf(eig,uni,wf,nwf,eig_df,uni_df,wfdf,nwfdf,eigmax,tdf,rdf,edf):
