@@ -3,24 +3,36 @@ import scipy as sc
 import scipy.linalg as sl
 import scipy.special as scsp
 import scipy.optimize as scopt
-import itertools as itts
-import matplotlib.pyplot as plt
-import get_ham
 import scipy.sparse as sspa
 import scipy.sparse.linalg as ssl
+import itertools as itts
+import matplotlib.pyplot as plt
+import json
+
+import get_ham
 
 #from numba import jit
 
 lorb=3
 ne=6 #electron filling
 
-zeta= 0.191651
+zeta=0.19477
 
-F0p= 0.5808
-F0 = 14.7312
-Up = 5.8756e-2
-#B40= 1.92436e-3
-#B60= 3.91589e-5
+F0p= 0.48124
+F0 =14.80094
+Up = 5.76508e-2
+#B40= 2.10695e-2
+#B60=-1.92695e-3
+#B20= 3.45527e-1
+#B66=-6.34560e-2
+
+#F0p=-0.3052
+#F0 = 7.2655
+#Up = 2.7574e-2
+#B40=-2.8243e-2
+#B60=-3.6113e-3
+#B20=-9.7915e-1
+#B66=-1.0711e-1
 
 #check_d
 #zeta=0.0
@@ -53,25 +65,27 @@ init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
         0.    ,0.    ,0.0001,0.0001,0.0001,0.    ,0.0000]
 #init_n=[.5,1.,1.,1.,1.,1.,.5,0.,0.,0.,0.,0.,0.,0.]
 #init_n=[.5,1.,0.,1.,.5,0.,0.,0.,0.,0.]
-JRPG=np.array([[0,3,3],[6,3,3],[0,2,2]])
+JRPG=np.array([[0,0,0],[0,0,0],[0,0,0]])
 
-cf_type=1
-erange=4.0 #plot energy range
+cf_type=2
+erange=3.0 #plot energy range
 num_eig=400
 idelta=1.e-4
-temp=2.6e-2 #~300K
-sw_spa=True #sparse matrix or not
+#temp=2.6e-3 #~300K
+temp=3.4
+sw_spa=False #sparse matrix or not
 
 #for arrows plotting
-iemax=3.          #max initial energy value
-demax=3.5         #max transition energy to plot arrows
+iemax=2.0         #max initial energy value
+demax=2.5         #max transition energy to plot arrows
 demin=1.e-3       #min tansition energy to plot arrows
+th_en=6.e-4
 
-compair_ham=False #switch compair MF and QSGW hamiltonian or not
+compare_ham=True  #switch compare MF and QSGW hamiltonian or not
 sw_conv=False     #switch calc parameters or not
-sw_conv_cf=False  #switch consider crystal field or not
+sw_conv_cf=True   #switch consider crystal field or not
 sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
-sw_spec=True      #switch calc spectrum and grotrian diagram or not
+sw_spec=False     #switch calc spectrum and grotrian diagram or not
 sw_F_type=0       #switch set F setting 
 sw_unit=False      #True cm^-1 False eV
 sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
@@ -79,6 +93,8 @@ sw_cfsoc=False    #switch crystal field basis j or l,s
 sw_arrows=True    #switch plot arrows correspond to transtion (<l|r or 2s+l|m>^2<1e-3)
 sw_add_pdata=False
 sw_dd=False
+sw_df=True
+sw_rta=True
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -178,7 +194,24 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
     """
     #soc
     if zeta==100:
-        pass
+        data=json.load(open('dipole.json','r'))["hammsoc"]
+        tmp=np.array(data["real"])+1j*np.array(data["imag"])
+        uni0=np.zeros((ns,ns),dtype=complex)
+        for i in range(ns//2):
+            if i==lorb:
+                uni0[i,i]=1.
+                uni0[i+ns//2,i+ns//2]=1.
+            elif i<lorb:
+                uni0[i,i]=-1j/np.sqrt(2.)
+                uni0[i,2*lorb-i]=1/np.sqrt(2.)
+                uni0[i+ns//2,i+ns//2]=-1j/np.sqrt(2.)
+                uni0[i+ns//2,2*lorb-i+ns//2]=1/np.sqrt(2.)
+            else:
+                uni0[i,i]=(-1.)**((i-1)%2)/np.sqrt(2.)
+                uni0[i,2*lorb-i]=(-1)**((i-1)%2)*1j/np.sqrt(2.)
+                uni0[i+ns//2,i+ns//2]=(-1)**(i%2)/np.sqrt(2.)
+                uni0[i+ns//2,2*lorb-i+ns//2]=(-1)**(i%2)*1j/np.sqrt(2.)
+        hopsoc=uni0.dot(tmp.dot(uni0.T.conjugate()))
     else:
         mmax=.5*(ns//2-1)
         lsdiag=np.diag(np.array([(l-mmax) for l in range(ns//2)]))*.5
@@ -286,17 +319,19 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                         O4[11,7]=O4[7,11]
                         O4[9,13]=O4[0,4]
                         O4[13,9]=O4[9,13]
+
                         O4[5,1]=O4[1,5]
                         O4[8,12]=O4[1,5]
                         O4[12,8]=O4[8,12]
                         #O64,l=3
                         O6[4,0]=O6[0,4]
                         O6[2,6]=O6[0,4]
-                        O6[6,2]=O6[6,2]
+                        O6[6,2]=O6[2,6]
                         O6[7,11]=O6[0,4]
                         O6[11,7]=O6[7,11]
                         O6[9,13]=O6[0,4]
                         O6[13,9]=O6[9,13]
+
                         O6[5,1]=O6[1,5]
                         O6[8,12]=O6[1,5]
                         O6[12,8]=O6[8,12]
@@ -555,7 +590,6 @@ def main():
             wf[i][ist]=1
         U,J=get_ham.UJ(F,lorb)
         dU=get_ham.get_dU(Fp,lorb)
-
     if sw_TSplot:
         plot_TS(U,J,F,nwf,wf)
     elif sw_dd:
@@ -569,7 +603,7 @@ def main():
         np.set_printoptions(linewidth=500)
         #print(hop.round(4))
         #print(eig.round(4))
-        if compair_ham:
+        if compare_ham:
             plot_hamHF(hop,U,J,dU,F)
         np.set_printoptions(linewidth=300)
         #print(wf)
@@ -585,13 +619,62 @@ def main():
             plt.show()
             (eig,eigf)=sl.eigh(ham)
         eigmax=(np.where(eig<=erange+eig[0])[0]).size
+        unit=eV2cm if sw_unit else 1.
+
+        if sw_df:
+            if sw_rta:
+                data=json.load(open('rta.json','r'))
+                rdf=np.array(data['rdf']['real'])+1j*np.array(data['rdf']['imag'])
+                tdf=np.array(data['tdf']['real'])+1j*np.array(data['tdf']['imag'])
+            else:
+                tdf=1.e-4*np.ones(14)
+                rdf=1.e-1*np.ones(14)
+            if ne!=ns:
+                edf=12.0
+                nwfp=scsp.comb(ns,ne+1,exact=True)
+                instatesp=np.array(list(itts.combinations(range(ns),ne+1)))
+                wfp=np.zeros((nwfp,ns),dtype=int)
+                for i,ist in enumerate(instatesp):
+                    wfp[i][ist]=1
+                ham_p=get_ham.get_ham(wfp,hop,nwfp,U,J,ns,F,l=lorb)
+                (eig_p,eigf_p)=sl.eigh(ham_p)
+                tdf_p,rdf_p,ediff_p=get_ham.get_rdf(eig,eigf,wf,nwf,eig_p,eigf_p,wfp,nwfp,eigmax,tdf,rdf,-edf)
+            if ne!=0:
+                nwfm=scsp.comb(ns,ne-1,exact=True)
+                instatesm=np.array(list(itts.combinations(range(ns),ne-1)))
+                wfm=np.zeros((nwfm,ns),dtype=int)
+                for i,ist in enumerate(instatesm):
+                    wfm[i][ist]=1
+                ham_m=get_ham.get_ham(wfm,hop,nwfm,U,J,ns,F,l=lorb)
+                (eig_m,eigf_m)=sl.eigh(ham_m)
+                tdf_m,rdf_m,ediff_m=get_ham.get_rdf(eig,eigf,wf,nwf,eig_m,eigf_m,wfm,nwfm,eigmax,tdf,rdf,edf)
+            if ne!=ns:
+                spdf=(tdf_p*ediff_p).dot(rdf_p.T.conjugate())
+            elif ne!=0:
+                spdf=(tdf_m*ediff_m).dot(rdf_m.T.conjugate())
+            else:
+                spdf=(rdf_p*ediff_p).dot(rdf_p.T.conjugate())+(rdf_m*ediff_m).dot(rdf_m.T.conjugate())
+            deig=np.array([[e1-e2 for e1 in eig[:eigmax]] for e2 in eig[:eigmax]])
+            func=np.exp(-2*(eig[:eigmax]-eig[0]-2.5)**2)
+            #func=(eig[:eigmax]-eig[0])**3/(np.exp((eig[:eigmax]-eig[0])/temp)-1)
+            #func[0]=0.
+            func=func/func.sum()
+            dfunc=np.array([[e2-e1 for e1 in func] for e2 in func])
+            wlen=np.linspace(0,erange,1000)+idelta*1j
+            spect=[-(abs(spdf)*dfunc/(iw+deig)).sum().imag for iw in wlen]
+            #spect=[-(abs(spdf)/(iw+deig)).sum().imag for iw in wlen]
+            #spect[0]=0
+            plt.plot(wlen,spect)
+            #plt.imshow(spdf.real,cmap=plt.cm.jet,interpolation='nearest')
+            #plt.colorbar()
+            plt.show()
+
         if sw_spec:
             """
             if sw_spec true, calc and plot absorption spectrum
             """
-            unit=eV2cm if sw_unit else 1.
             wlen,chi,chi2,Jeig,Jcolor,arrows,arrows_mag=get_ham.get_spectrum(
-                nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,JRPG,iemax,demax,demin,idelta)
+                nwf,wf,eig,eigf,instates,sp1,erange,temp,lorb,JRPG,iemax,demax,demin,th_en,idelta)
             figs=plt.figure()
             ax1=figs.add_subplot(211,xlim=(0,erange*unit))
             ax1.plot(wlen*unit,chi)
@@ -608,7 +691,7 @@ def main():
 
             #print(arrows)
             fig=plt.figure()
-            ax=fig.add_subplot(111)
+            ax=fig.add_subplot(111,xlim=(0,12),ylim=(0,erange))
             ax.scatter(Jeig[:eigmax],(eig-eig[0])[:eigmax],c=Jcolor[:eigmax])
             if sw_arrows:
                 for ar in arrows: #electric dipole lightgray
@@ -621,7 +704,7 @@ def main():
             plt.show()
 
         #exit()
-        eig=(eig-eig[0])*eV2cm
+        eig=(eig-eig[0])*unit
         f=open('output.txt','w')
         for i,ef in enumerate(eigf.T[:eigmax]):
             wfw=np.where(abs(ef)**2>5.0e-3)[0]
@@ -642,7 +725,7 @@ def main():
         for i,est in enumerate(eig[:eigmax]):
             for j,een in enumerate(eig[i+1:eigmax]):
                 diff_e=een-est
-                if diff_e<erange*eV2cm:
+                if diff_e<erange*unit:
                     f.write('%6.3f, %d, %d\n'%(diff_e,j+i+1,i))
         f.close()
         print(U.round(4))
@@ -721,7 +804,7 @@ def main():
         except NameError:
             pass
         plt.xlim(-0.05,0.05)
-        plt.ylim(0,erange*eV2cm)
+        plt.ylim(0,erange*unit)
         plt.show()
 
 #import time

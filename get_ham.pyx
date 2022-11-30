@@ -311,7 +311,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
                  cnp.ndarray[cnp.complex128_t,ndim=2] eigf,cnp.ndarray[cnp.int64_t,ndim=2] instates,
                  cnp.ndarray[cnp.int64_t,ndim=2] sp1,double erange, double temp, int lorb, 
                  cnp.ndarray[cnp.int64_t,ndim=2] JRGB,double ie_max=2.0, double de_max=3.0,
-                 double de_min=1.e-3, double id=1.0e-3, int wmesh=2000):
+                 double de_min=1.e-3, double ten=2.0e-4, double id=1.0e-3, int wmesh=2000):
     """
     generate spectrum
     """
@@ -324,8 +324,8 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     for i,mn in enumerate(mnn):
         for j0,m in enumerate(mn[i+1:]):
             j=i+j0+1
-            if (abs(eig[i]-eig[0])<ie_max and abs(eig[j]-eig[0])<erange and de_min<abs(eig[j]-eig[i])<de_max) and m>1.e-3:
-                print(eig[i]-eig[0],eig[i]-eig[j],i,j)
+            if (abs(eig[i]-eig[0])<ie_max and abs(eig[j]-eig[0])<erange and de_min<abs(eig[j]-eig[i])<de_max) and m>ten:
+                print(eig[i]-eig[0],eig[i]-eig[j],i,j,m)
                 arrows.append([i,j])
             else:
                 pass
@@ -333,7 +333,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     for i,mn in enumerate(mnn2):
         for j0,m in enumerate(mn[i+1:]):
             j=i+j0+1
-            if (abs(eig[i]-eig[0])<ie_max and abs(eig[j]-eig[0])<erange and de_min<abs(eig[j]-eig[i])<de_max) and m>1.e-5:
+            if (abs(eig[i]-eig[0])<ie_max and abs(eig[j]-eig[0])<erange and de_min<abs(eig[j]-eig[i])<de_max) and m>ten:
                 print(eig[i]-eig[0],eig[i]-eig[j],i,j)
                 arrows_mag.append([i,j])
             else:
@@ -556,7 +556,7 @@ def get_ham_spa(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cn
 
 def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
            cnp.ndarray[cnp.float64_t,ndim=2] J, int ns, cnp.ndarray[cnp.float64_t,ndim=1] F,
-           int l=3,sw_all_g=True):
+           int l=3):
     """
     get many-body hamiltonian
     """
@@ -569,7 +569,6 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.fl
     G=lambda m1,m2,m3,m4,cp,F:(-1)**abs(m1-m3)*(F[:l+1]*cp[m1,m3]*cp[m2,m4]).sum()
     for i,ist in enumerate(wf):
         tmp1=np.where(ist==1)[0] #take occupy states
-        #print(tmp1)
         ham[i,i]=hop[tmp1,tmp1].sum() #sum of on-site energy
         for k, i0 in enumerate(tmp1): #consider U and U'
             if(i0<ns//2): #up spin
@@ -589,17 +588,17 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.fl
                     ham[i,i]=ham[i,i]+U[j2,i2]-J[j2,i2]
                 else: #spin anti parallel
                     ham[i,i]=ham[i,i]+U[j2,i2]
-        for j0,jst in enumerate(wf[i+1:]):
+
+        for j0,jst in enumerate(wf[i+1:]): #off-diagonal
             j=j0+i+1
-            tmp=abs(ist-jst).sum()
+            tmp1=ist-jst
+            tmp=abs(tmp1).sum()
             if(tmp==2): #hoppings one body (soc and crystal field)
-                tmp1=ist-jst
                 j2=np.where(tmp1==-1)[0][0]
                 i2=np.where(tmp1==1)[0][0]
                 sgn=(-1)**(jst[:j2].sum()+ist[:i2].sum())
                 ham[i,j]=sgn*hop[i2,j2]
             elif(tmp==4): #four operators two body
-                tmp1=ist-jst
                 if(tmp1[:ns//2].sum()==0): #spin conservation rule
                     m3=np.where(tmp1==-1)[0][0] #1st one anihilate
                     m4=np.where(tmp1==-1)[0][1] #2nd one anihilate
@@ -610,7 +609,7 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.fl
                     sgn=(-1)**(nst+nen) #total flip
                     if(abs(tmp1[:ns//2]+tmp1[ns//2:]).sum()==0): #Hund's couplings m1=m4,m2=m3
                         ham[i,j]=J[m1,m3]*sgn
-                    elif(sw_all_g):
+                    else:
                         if(m3>=ns//2):
                             m3=m3-ns//2
                         if(m4>=ns//2):
@@ -625,5 +624,27 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.fl
                                 pass
                             else: #spin parallel
                                 ham[i,j]=ham[i,j]-G(m2,m1,m3,m4,cp,F)*sgn
+            else:
+                continue
             ham[j,i]=ham[i,j].conjugate()
     return(ham)
+
+def get_rdf(eig,uni,wf,nwf,eig_df,uni_df,wfdf,nwfdf,eigmax,tdf,rdf,edf):
+    tdf0=np.zeros((nwf,nwfdf))
+    rdf0=np.zeros((nwf,nwfdf))
+    ediff=np.zeros((eigmax,nwfdf))
+    for i in range(nwf):
+        for j in range(nwfdf):
+            dwf=abs(wf[i]-wfdf[j])
+            if dwf.sum()==1:
+                rdf0[i,j]=rdf[np.where(dwf!=0)[0][0]]
+                tdf0[i,j]=tdf[np.where(dwf!=0)[0][0]]
+            else:
+                pass
+    tdf=uni[:,:eigmax].T.conjugate().dot(tdf0.dot(uni_df))
+    rdf=uni[:,:eigmax].T.conjugate().dot(rdf0.dot(uni_df))
+    for i in range(eigmax):
+        for j in range(nwfdf):
+            ediff[i,j]=1./(eig[i]-eig_df[j]-edf)
+
+    return tdf,rdf,ediff
