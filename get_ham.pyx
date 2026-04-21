@@ -17,6 +17,28 @@ import matplotlib.pyplot as plt
 # across every call within a single process.  Storing it here avoids
 # recomputing the SymPy Gaunt integrals more than once per run.
 _cp_cache = {}
+_fsub_lib = None
+_fsub_get_ham = None
+
+def _get_fsub_get_ham():
+    """
+    Load and configure fsub.get_ham only once per process.
+    """
+    # Cache the ctypes function object to avoid repeated dlopen/argtypes setup.
+    global _fsub_lib, _fsub_get_ham
+    if _fsub_get_ham is None:
+        _fsub_lib = np.ctypeslib.load_library("fsub.so", ".")
+        _fsub_get_ham = _fsub_lib.get_ham
+        _fsub_get_ham.argtypes = [np.ctypeslib.ndpointer(dtype=np.complex128), #ham
+                                  np.ctypeslib.ndpointer(dtype=np.int64), #wf
+                                  np.ctypeslib.ndpointer(dtype=np.complex128), #hop
+                                  np.ctypeslib.ndpointer(dtype=np.float64), #Umat
+                                  np.ctypeslib.ndpointer(dtype=np.float64), #Jmat
+                                  np.ctypeslib.ndpointer(dtype=np.float64), #cp
+                                  np.ctypeslib.ndpointer(dtype=np.float64), #F
+                                  POINTER(c_int64),POINTER(c_int64),POINTER(c_int64)] #nwf,ns,lmax
+        _fsub_get_ham.restype = c_void_p
+    return _fsub_get_ham
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -36,6 +58,7 @@ def gencp(int p,int l,int m):
        The SymPy Gaunt evaluation is slow (symbolic arithmetic); loading a
        pre-computed .npy file is essentially free by comparison.
     """
+    # Build Gaunt tensor once and reuse it from memory/disk cache.
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
     cdef long lmax=p-1, ll, pp, mm
     # --- level 1: in-memory cache ---
@@ -61,6 +84,7 @@ def UJ(cnp.ndarray[cnp.float64_t,ndim=1] F,int l=3):
     """
     generate onsite interaction U,J
     """
+    # Compute direct (U) and exchange (J) matrices from Slater integrals and Gaunt coefficients.
     cdef long m1,m2,i,j,lmax=2*l+1
     cdef cnp.ndarray[cnp.float64_t,ndim=2] U,J
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
@@ -74,6 +98,7 @@ def UJ(cnp.ndarray[cnp.float64_t,ndim=1] F,int l=3):
     return U,J
 
 def get_dU(double F0,int l=3):
+    # Compute the F0-only (monopole) contribution used as the dU correction.
     cdef long m1,m2,i,j,lmax=2*l+1
     cdef cnp.ndarray[cnp.float64_t,ndim=2] dU
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
@@ -97,6 +122,7 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     eigmax: maximum value of eigenvalues to be considered
     lmax: maximum angular momentum of one body electron
     """
+    # Build L/S ladder operators in many-body basis, then project J/L/S observables to eigenspace.
     cdef long i,j,k,spp_flag,spm_flag,lp_flag,lm_flag,lz,tmp
     cdef double lpnum,lmnum,upsign,dnsign
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] Jx,Jy,Jz
@@ -210,6 +236,7 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     eigmax: maximum value of eigenvalues to be considered
     lorb: maximum angular momentum of one body electron     
     """
+    # Classify eigenstates by LSJ content and construct electric/magnetic dipole transition matrices.
     #electric dipole_check
     cdef long i,j,l,l1,li,lj,j0,J,miz,mjz
     cdef cnp.ndarray[cnp.int64_t] ist,jst
@@ -348,6 +375,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     """
     generate spectrum
     """
+    # Convert transition matrices into finite-temperature spectra and candidate transition arrows.
     cdef long eig_int_max=(np.where(eig<=2.*erange+eig[0])[0]).size
     cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig,wlen=np.linspace(0,erange,wmesh)
 
@@ -440,6 +468,7 @@ def get_HF_full(int ns, int ne, init_n, ham0, cnp.ndarray[cnp.float64_t,ndim=2] 
     """
     calculate MF hamiltonian with full Coulomb interactions
     """
+    # Self-consistent HF with full Coulomb tensor (including off-diagonal exchange/pair-hopping terms).
     cdef long i,j,k,l,m
     cdef double mu
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham, ham_I=np.zeros((ns,ns),dtype='c16')
@@ -538,6 +567,7 @@ def get_ham_spa(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cn
     """
     get many-body hamiltonian
     """
+    # Assemble many-body Hamiltonian in sparse format by evaluating allowed one/two-body transitions.
     cdef long i,j,j0,k,tmp,i0,i2,isgn,j2,jsgn,m1,m2,m3,m4
     cdef cnp.ndarray[cnp.int64_t,ndim=1] ist,jst,tmp1
     #cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham=np.zeros((nwf,nwf),dtype='c16')
@@ -618,27 +648,23 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.fl
     """
     get many-body hamiltonian
     """
+    # Dense-path wrapper: pass validated arrays to the cached Fortran kernel.
+    cdef object fsub_get_ham
+    cdef cnp.ndarray[cnp.complex128_t,ndim=2] hop_c
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] ham=np.zeros((nwf,nwf),dtype='c16')
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
 
-    fsub=np.ctypeslib.load_library("fsub.so",".")
+    fsub_get_ham = _get_fsub_get_ham()
+    hop_c=np.asarray(hop,dtype=np.complex128)
     cp=gencp(l+1,l,l)
     lmax=byref(c_int64(l))
     nwfin=byref(c_int64(nwf))
     nsin=byref(c_int64(ns))
-    fsub.get_ham.argtypes=[np.ctypeslib.ndpointer(dtype=np.complex128), #ham
-                           np.ctypeslib.ndpointer(dtype=np.int64), #wf
-                           np.ctypeslib.ndpointer(dtype=np.complex128), #hop
-                           np.ctypeslib.ndpointer(dtype=np.float64), #Umat
-                           np.ctypeslib.ndpointer(dtype=np.float64), #Jmat
-                           np.ctypeslib.ndpointer(dtype=np.float64), #cp
-                           np.ctypeslib.ndpointer(dtype=np.float64), #F
-                           POINTER(c_int64),POINTER(c_int64),POINTER(c_int64)] #nwf,ns,lmax
-    fsub.get_ham.restype=c_void_p
-    fsub.get_ham(ham,wf,hop.astype("c16"),U,J,cp,F,nwfin,nsin,lmax)
+    fsub_get_ham(ham,wf,hop_c,U,J,cp,F,nwfin,nsin,lmax)
     return(ham)
 
 def get_rdf(eig,uni,wf,nwf,eig_df,uni_df,wfdf,nwfdf,eigmax,tdf,rdf,edf):
+    # Build transition operators between f^n and f^(n±1) spaces and associated energy denominators.
     tdf0=np.zeros((nwf,nwfdf))
     rdf0=np.zeros((nwf,nwfdf))
     ediff=np.zeros((eigmax,nwfdf))

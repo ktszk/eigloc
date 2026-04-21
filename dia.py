@@ -8,6 +8,7 @@ import scipy.sparse.linalg as ssl
 import itertools as itts
 import matplotlib.pyplot as plt
 import json
+import os
 
 import get_ham
 
@@ -91,10 +92,14 @@ sw_unit=False     #True cm^-1 False eV
 sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
 sw_cfsoc=False    #switch crystal field basis j or l,s
 sw_arrows=False   #switch plot arrows correspond to transtion (<l|r or 2s+l|m>^2<1e-3)
-sw_add_pdata=False
-sw_dd=False
-sw_df=False
-sw_rta=False
+sw_add_pdata=False #switch overlay experimental/reference level data on the final plot
+sw_dd=True        #switch run lanthanide-series (d-d / f-f) batch plotting mode
+sw_df=False        #switch calculate d-f transition spectrum branch
+sw_rta=False       #switch read transition amplitudes from rta.json instead of default constants
+# plotting mode: 'show' (interactive), 'save' (file only), 'both' (interactive + file)
+sw_plot_mode='show'
+plot_out_dir='figures'
+plot_dpi=200
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -133,8 +138,7 @@ ns=4*lorb+2 #number of states
 eV2cm=8.06554 #ev to 10e3cm^-1
 
 if ne>ns:
-    print('too many electrons')
-    exit()
+    raise ValueError('too many electrons: ne must be <= ns')
 
 sp1=np.array([[-lorb+l,1] for l in range(2*lorb+1)]
              +[[-lorb+l,-1] for l in range(2*lorb+1)])
@@ -144,6 +148,25 @@ try:
 except NameError:
     print('generate init_n')
     init_n=[1 if i<ne else 0 for i in range(ns)]
+
+def handle_plot(save_name=None):
+    """
+    finalize current matplotlib figure according to sw_plot_mode
+    """
+    valid_modes={'show','save','both'}
+    if sw_plot_mode not in valid_modes:
+        raise ValueError('sw_plot_mode must be one of: show, save, both')
+
+    fig=plt.gcf()
+    if sw_plot_mode in {'save','both'}:
+        os.makedirs(plot_out_dir,exist_ok=True)
+        if save_name is None:
+            save_name='plot.png'
+        fig.savefig(os.path.join(plot_out_dir,save_name),dpi=plot_dpi,bbox_inches='tight')
+    if sw_plot_mode in {'show','both'}:
+        plt.show()
+    else:
+        plt.close(fig)
 
 def get_F(F_type:int,E0:float,E1:float,E2:float,E3:float):
     """
@@ -192,8 +215,9 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
     """
     generate H_soc and H_cf
     """
-    #soc
+    # Build spin-orbit part H_soc.
     if zeta==100:
+        # Special mode: load precomputed SOC matrix and rotate to (l,m,s) basis.
         data=json.load(open('dipole.json','r'))["hammsoc"]
         tmp=np.array(data["real"])+1j*np.array(data["imag"])
         uni0=np.zeros((ns,ns),dtype=complex)
@@ -213,6 +237,7 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                 uni0[i+ns//2,2*lorb-i+ns//2]=(-1)**(i%2)*1j/np.sqrt(2.)
         hopsoc=uni0.dot(tmp.dot(uni0.T.conjugate()))
     else:
+        # Analytic SOC in block form: [ Lz/2  L+/2; L-/2  -Lz/2 ] * zeta.
         mmax=.5*(ns//2-1)
         lsdiag=np.diag(np.array([(l-mmax) for l in range(ns//2)]))*.5
         lspm=np.zeros((ns//2,ns//2))
@@ -227,13 +252,13 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
         #print(np.round(lspm,4))
         #print(lsdiag)
 
-    #cf
+    # Build crystal-field part H_cf from Stevens operators.
     (B40,B60,B20,B66)=Blm
     alpha=0.4 #(B44/(5B40)) if alpha and beta==1 cube
     beta=0.3  #(B64/(21B60))
     if cf_type!=0:
         if wsoc_cf: #make Hcf from j basis stevens op.
-            #make unitary matrix j2lm
+            # Unitary map from j-basis representation to (l,m,s) representation.
             uni=np.zeros((ns,ns))
             for i in range(2*lorb):
                 uni[i,4*lorb+1-i]=np.sqrt(2*lorb-i)
@@ -244,6 +269,7 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
             uni=uni/np.sqrt(ns/2)
             if cf_type in {1,2}:
                 if lorb==3:
+                    # Diagonal parts of Stevens operators in j basis.
                     O4j=np.diag([ 1.,-3., 2., 2.,-3., 1., 7.,-13.,-3.,  9.,  9.,-3.,-13., 7.])
                     O6j=np.diag([ 0., 0., 0., 0., 0., 0.,1.,-5.,9.,-5.,-5.,9.,-5.,1.])
                     if cf_type==1: #Cube
@@ -278,20 +304,20 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                         O66j[12,6]=O66j[6,12]
                         O66j[7,13]=O66j[6,12]
                         O66j[13,7]=O66j[7,13]
+                        # Hexagonal field with O2, O4, O6, O66 components.
                         hopcf=uni.T.conjugate().dot((B20*O2j/60.+B40*O4j+21.*B60*O6j+4.*B66*O66j).dot(uni))
                     else:
-                        print('There is no crystal field in this symmetry please add')
-                        exit()
+                        raise ValueError('There is no crystal field definition for this symmetry')
                 elif lorb==2:
                     pass
                 elif lorb==1:
                     pass
                 else:
-                    print('consider only l=1~3')
-                    exit()
+                    raise ValueError('consider only l=1~3')
             else:
                 pass
         else: #l basis (wosoc cf)
+            # Crystal-field directly in (l,m,s) basis.
             if cf_type in {1,2,3}:
                 if lorb==3:
                     O4=np.diag([ 3., -7.,  1.,   6.,  1., -7., 3.,
@@ -344,6 +370,7 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                         O66[6,0]=O66[0,6]
                         O66[7,13]=O66[0,6]
                         O66[13,7]=O66[7,13]
+                        # Hexagonal field in l-basis.
                         hopcf=.05*B20*O2+B40*O4+3.*B60*O6+6.*B66*O66
                 elif lorb==2:
                     O4=np.diag([1.,-4.,6.,-4.,1.,1.,-4,6.,-4.,1.])
@@ -357,16 +384,16 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
                         O2=np.diag([2.,-1.,-2.,-1.,2,2.,-1.,-2.,-1.,2])
                         hopcf=.25*B20*O2+B40*O4
                     else:
-                        print('There is no crystal field in this symmetry please add')
-                        exit()
+                        raise ValueError('There is no crystal field definition for this symmetry')
                 elif lorb==1:
                     pass
                 else:
-                    print('consider only l=1~3')
-                    exit()                    
+                    raise ValueError('consider only l=1~3')                    
+        # Final one-body Hamiltonian: H = H_soc + H_cf.
         #print(hopcf.round(3))
         hop=hopsoc+hopcf
     else:
+        # No crystal field requested.
         hop=hopsoc
     return(hop)
 
@@ -376,6 +403,7 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
     """
     ini_n=np.array(init_n)
     n1=np.diag(ini_n)
+    # Self-consistent Hartree-Fock loop for the one-body density matrix n1.
     for k in range(itemax):
         ham_hub=np.zeros((ns,ns))
         for i in range(ns//2):
@@ -398,6 +426,7 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
         #mu=scopt.newton(f,0.5*(eig.min()+eig.max()))
         n0=.5-.5*np.tanh(0.5*(eig-mu)/temp)
         new_n=uni.dot(np.diag(n0).dot(uni.T.conjugate()))
+        # Relative change of density matrix: convergence metric.
         dn=abs(new_n-n1).sum()/abs(new_n).sum()
         if dn<eps:
             L,S=0,0
@@ -458,13 +487,14 @@ def plot_hamHF(hop,U,J,dU,F,temp=1.0e-9):
         print((eig2-mu2).round(3))
         print((uni**2).round(3))
         plt.scatter([0]*ns,eig2-mu2,marker='_',color='red')
-    plt.show()
+    handle_plot('ham_hf_compare.png')
 
 def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
     """
     self-consistent cycle to define parameters
     """
     def func(x):
+        # Objective: align many-body HF spectrum with imported hopping spectrum.
         (F0,F0p,Up,Up2,Up3,B4,B6,B2,B62)=tuple(x)
         if sw_conv_cf:
             Blm=(B4,B6,B2,B62)
@@ -500,18 +530,21 @@ def ham_conv(F0,F0p,Up,Up2,Up3,zeta,B40,B60,B20,B66):
     return(F,F0p1,Blm)
 
 def plot_TS(U,J,F,nwf,wf,dqmax=5,dqlen=100,mem_enough=False):
-    if sw_F_type==0:
-        RB=5.*F[2]/63.
-        RC=(9.*F[1]-5*F[2])/441.
-    elif sw_F_type==3:
+    if sw_F_type==3:
         RB=918/eV2cm
         RC=4133/eV2cm
+    else:
+        RB=5.*F[2]/63.
+        RC=(9.*F[1]-5*F[2])/441.
     dq=np.linspace(0,dqmax,dqlen)
+    # Sweep crystal-field strength and track many-body eigenvalue evolution.
     hop=np.array([gen_hop_free(zeta,(dqq,0,0,0),wsoc_cf=sw_cfsoc) for dqq in dq])
     if mem_enough:
+        # Fast path: keeps all Hamiltonians/eigenvalues in memory.
         eg=[sl.eigvalsh(get_ham.get_ham(wf,hp,nwf,U,J,ns,F,l=lorb)) for hp in hop]
         eig=np.array([egg-egg[0] for egg in eg])
     else:
+        # Low-memory path: diagonalize one Hamiltonian at a time.
         eig=[]
         for hp in hop:
             ham=get_ham.get_ham(wf,hp,nwf,U,J,ns,F,l=lorb)
@@ -523,8 +556,7 @@ def plot_TS(U,J,F,nwf,wf,dqmax=5,dqlen=100,mem_enough=False):
     fig=plt.figure()
     ax=fig.add_subplot(111,xlabel='Dq/B',ylabel='Energy/B',title='Tanabe-Sugano Diagram',xlim=(0,3),ylim=(0,50))
     ax.plot(xlist,ylist,c='black',lw=1.)
-    fig.savefig("TSdiagram.png")
-    plt.show()
+    handle_plot('TSdiagram.png')
 
 def plot_dd():
     def plotdd(ax,z_list,F2list,xtlabs,marker,color):
@@ -556,21 +588,24 @@ def plot_dd():
     F2list2=[0.0236,0.0414,0.0441,0.0521,0.0521,0.0569,0.0579,0.0626,0.0637,0.0646,0.0678,0.0703,0.0740]
     plt.plot(np.arange(len(F2list))+1,F2list)
     plt.plot(np.arange(len(F2list2))+1,F2list2)
-    plt.show()
-    exit()
+    handle_plot('dd_params_compare.png')
     fig=plt.figure()
     ax=fig.add_subplot(111,ylim=(0,erange*unit),xticks=list(range(len(z_list))),xticklabels=xtlabs)
     ax.set_ylabel(r'Energy (%s)'%cunit)
     plotdd(ax,z_list,F2list,xtlabs,'.','black')
     plotdd(ax,z_list2,F2list2,xtlabs,'_','red')
-    plt.show()
+    handle_plot('dd_levels.png')
 
 def main():
     """
     main program of dia.py
     """
+    if sw_TSplot and sw_dd:
+        raise ValueError('sw_TSplot and sw_dd cannot both be True at the same time')
+
     eV2cm=8.06554 #ev to 10e3cm^-1
     #eV2cm=1.
+    # Stage 1: build interaction parameters and many-body basis.
     if sw_dd:
         pass
     else:
@@ -590,6 +625,7 @@ def main():
             wf[i][ist]=1
         U,J=get_ham.UJ(F,lorb)
         dU=get_ham.get_dU(Fp,lorb)
+    # Stage 2: choose execution mode (TS plot / dd scan / full diagonalization).
     if sw_TSplot:
         plot_TS(U,J,F,nwf,wf)
     elif sw_dd:
@@ -608,15 +644,17 @@ def main():
         np.set_printoptions(linewidth=300)
         #print(wf)
         if sw_spa:
+            # Sparse construction + partial eigensolver for low-energy states only.
             ham=get_ham.get_ham_spa(wf,hop,nwf,U,J,ns,F,l=lorb,spa_type='csr')
             eig,eigf=ssl.eigsh(ham,k=num_eig,which='SM')
             sarg=np.argsort(eig)
             eig=eig[sarg]
             eigf=(eigf.T[sarg]).T
         else:
+            # Dense construction + full diagonalization.
             ham=get_ham.get_ham(wf,hop,nwf,U,J,ns,F,l=lorb)
             plt.spy(abs(ham))
-            plt.show()
+            handle_plot('ham_sparsity.png')
             (eig,eigf)=sl.eigh(ham)
         eigmax=(np.where(eig<=erange+eig[0])[0]).size
         unit=eV2cm if sw_unit else 1.
@@ -648,12 +686,12 @@ def main():
                 ham_m=get_ham.get_ham(wfm,hop,nwfm,U,J,ns,F,l=lorb)
                 (eig_m,eigf_m)=sl.eigh(ham_m)
                 tdf_m,rdf_m,ediff_m=get_ham.get_rdf(eig,eigf,wf,nwf,eig_m,eigf_m,wfm,nwfm,eigmax,tdf,rdf,edf)
-            if ne!=ns:
+            if ne!=ns and ne!=0:
+                spdf=(tdf_p*ediff_p).dot(rdf_p.T.conjugate())+(tdf_m*ediff_m).dot(rdf_m.T.conjugate())
+            elif ne!=ns:
                 spdf=(tdf_p*ediff_p).dot(rdf_p.T.conjugate())
-            elif ne!=0:
-                spdf=(tdf_m*ediff_m).dot(rdf_m.T.conjugate())
             else:
-                spdf=(rdf_p*ediff_p).dot(rdf_p.T.conjugate())+(rdf_m*ediff_m).dot(rdf_m.T.conjugate())
+                spdf=(tdf_m*ediff_m).dot(rdf_m.T.conjugate())
             deig=np.array([[e1-e2 for e1 in eig[:eigmax]] for e2 in eig[:eigmax]])
             func=np.exp(-2*(eig[:eigmax]-eig[0]-2.5)**2)
             #func=(eig[:eigmax]-eig[0])**3/(np.exp((eig[:eigmax]-eig[0])/temp)-1)
@@ -667,7 +705,7 @@ def main():
             plt.plot(wlen,spect)
             #plt.imshow(spdf.real,cmap=plt.cm.jet,interpolation='nearest')
             #plt.colorbar()
-            plt.show()
+            handle_plot('df_spectrum.png')
 
         if sw_spec:
             """
@@ -686,8 +724,7 @@ def main():
             ax2.scatter((eig[n_fcs]-eig[:eigmax])*unit,[0]*eigmax,c='red',marker='o')
             ax2.scatter((eig[:eigmax]-eig[1])*unit,[0]*eigmax,c='green',marker='+')
             ax2.scatter((eig[:eigmax]-eig[0])*unit,[0]*eigmax,c='cyan',marker='|')
-            figs.savefig('spectrum.pdf')
-            plt.show()
+            handle_plot('spectrum.pdf')
 
             #print(arrows)
             fig=plt.figure()
@@ -700,8 +737,7 @@ def main():
                 for ar in arrows_mag: #magnetic dipole darkgray
                     ax.arrow(x=Jeig[ar[1]],y=eig[ar[1]]-eig[0],dx=Jeig[ar[0]]-Jeig[ar[1]],dy=eig[ar[0]]-eig[ar[1]],
                              width=0.01,head_width=0.05,head_length=0.2,length_includes_head=True,color='darkgray')
-            fig.savefig('Grotrian.pdf')
-            plt.show()
+            handle_plot('Grotrian.pdf')
 
         #exit()
         eig=(eig-eig[0])*unit
@@ -805,10 +841,10 @@ def main():
             pass
         plt.xlim(-0.05,0.05)
         plt.ylim(0,erange*unit)
-        plt.show()
-
-#import time
-#t1=time.time()
-main()
-#t2=time.time()
-#print(t2-t1)
+        handle_plot('levels.png')
+if __name__=='__main__':
+    #import time
+    #t1=time.time()
+    main()
+    #t2=time.time()
+    #print(t2-t1)
