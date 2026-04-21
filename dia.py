@@ -81,20 +81,20 @@ demax=2.5         #max transition energy to plot arrows
 demin=1.e-3       #min tansition energy to plot arrows
 th_en=6.e-4
 
-compare_ham=True  #switch compare MF and QSGW hamiltonian or not
+compare_ham=False #switch compare MF and QSGW hamiltonian or not
 sw_conv=False     #switch calc parameters or not
-sw_conv_cf=True   #switch consider crystal field or not
+sw_conv_cf=False  #switch consider crystal field or not
 sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
 sw_spec=False     #switch calc spectrum and grotrian diagram or not
 sw_F_type=0       #switch set F setting 
-sw_unit=False      #True cm^-1 False eV
+sw_unit=False     #True cm^-1 False eV
 sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
 sw_cfsoc=False    #switch crystal field basis j or l,s
-sw_arrows=True    #switch plot arrows correspond to transtion (<l|r or 2s+l|m>^2<1e-3)
+sw_arrows=False   #switch plot arrows correspond to transtion (<l|r or 2s+l|m>^2<1e-3)
 sw_add_pdata=False
 sw_dd=False
-sw_df=True
-sw_rta=True
+sw_df=False
+sw_rta=False
 if sw_F_type==0: #no use Up2,Up3
     Up2=0
     Up3=0
@@ -145,7 +145,7 @@ except NameError:
     print('generate init_n')
     init_n=[1 if i<ne else 0 for i in range(ns)]
 
-def get_F(F_type,E0,E1,E2,E3):
+def get_F(F_type:int,E0:float,E1:float,E2:float,E3:float):
     """
     generate Slater-Condon parameteres
     """
@@ -174,7 +174,7 @@ def gen_hop():
     """
     import hopping parameters from QSGW
     """
-    def import_Hopping(fname):
+    def import_Hopping(fname:str):
         tmp=[f.split() for f in open(fname,'r')]
         tmp=sc.array([complex(float(tp[8]),float(tp[9])) for tp in tmp])
         ham_r=sc.reshape(tmp,(ns//2,ns//2))

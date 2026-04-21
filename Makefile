@@ -1,4 +1,4 @@
-FC=ifort
+FC=ifx
 fparallel=-fopenmp
 fsimd=-axCORE-AVX2 -xSSE4.2
 FFLAGS= -O2 $(fsimd) $(parallel) -shared -fPIC
