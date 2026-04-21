@@ -1,3 +1,13 @@
+# dia.py: Main driver for many-body diagonalization of lanthanide f-electron systems.
+#
+# Workflow:
+#   1. Define one-body Hamiltonian H0 = H_soc + H_cf  (gen_hop_free)
+#   2. Build Slater-Condon parameters F^k and Kanamori U,J matrices  (get_F / get_ham.UJ)
+#   3. Construct many-body Hamiltonian in Slater-determinant basis  (get_ham.get_ham)
+#   4. Diagonalize and analyze spectra, Grotrian diagrams, Tanabe-Sugano diagrams
+#
+# Physical units are eV throughout; output can be converted to 10^3 cm^-1 via eV2cm.
+
 import numpy as np
 import scipy as sc
 import scipy.linalg as sl
@@ -14,9 +24,17 @@ import get_ham
 
 #from numba import jit
 
+# --- System definition ---
+# lorb: angular momentum of the active shell (2 for d, 3 for f)
+# ne:   number of electrons (determines Ce=1, Pr=2, ..., Eu=6, ... Yb=13 for f-shell)
 lorb=3
 ne=6 #electron filling
 
+# --- One-body parameters ---
+# zeta: spin-orbit coupling constant (eV)
+# F0p:  F0 for the correlated orbital (subspace Coulomb)
+# F0:   Slater integral F^0 (eV)
+# Up:   reduced Slater integral U' = F^2/225  (eV, sets the Racah/Hund scale)
 zeta=0.19477
 
 F0p= 0.48124
@@ -68,6 +86,12 @@ init_n=[0.9784,0.9796,0.9801,0.9805,0.9805,0.9802,0.0000,
 #init_n=[.5,1.,0.,1.,.5,0.,0.,0.,0.,0.]
 JRPG=np.array([[0,0,0],[0,0,0],[0,0,0]])
 
+# --- Calculation settings ---
+# cf_type: 0=no CF, 1=cubic, 2=hexagonal, 3=lower symmetry
+# erange:  energy window for plotting/output (eV)
+# num_eig: number of eigenvalues to compute in sparse mode (k argument to eigsh)
+# idelta:  Lorentzian broadening for spectral functions (eV)
+# temp:    temperature for Fermi/Boltzmann weights (eV; ~300 K ≈ 2.6e-3 eV)
 cf_type=2
 erange=3.0 #plot energy range
 num_eig=400
@@ -76,18 +100,19 @@ idelta=1.e-4
 temp=3.4
 sw_spa=False #sparse matrix or not
 
-#for arrows plotting
+# Grotrian diagram arrow filter thresholds
 iemax=2.0         #max initial energy value
 demax=2.5         #max transition energy to plot arrows
 demin=1.e-3       #min tansition energy to plot arrows
-th_en=6.e-4
+th_en=6.e-4       #min dipole intensity to draw arrow
 
+# --- Mode switches ---
 compare_ham=False #switch compare MF and QSGW hamiltonian or not
 sw_conv=False     #switch calc parameters or not
 sw_conv_cf=False  #switch consider crystal field or not
 sw_full=True      #switch consider full-interaction or not if obtain MF hamiltonian
 sw_spec=False     #switch calc spectrum and grotrian diagram or not
-sw_F_type=0       #switch set F setting 
+sw_F_type=0       #switch set F setting
 sw_unit=False     #True cm^-1 False eV
 sw_TSplot=False   #switch calc Tanabe-Sugano diagram or not
 sw_cfsoc=False    #switch crystal field basis j or l,s
@@ -170,7 +195,12 @@ def handle_plot(save_name=None):
 
 def get_F(F_type:int,E0:float,E1:float,E2:float,E3:float):
     """
-    generate Slater-Condon parameteres
+    Convert user-facing parameters to Slater-Condon integrals F^k (k=0,2,4,6).
+
+    F_type=0: E1=Up gives F via standard Racah ratios F^4/F^2=0.138, F^6/F^2=0.0151
+    F_type=1: inputs are Racah parameters B,C,D -> back-convert to F^k
+    F_type=2: direct input with the same Racah ratio scaling applied
+    F_type=3: raw F^k inputs (no rescaling)
     """
     if F_type==0:
         F=np.array([0.,1.*225,0.138*1089,0.0151*7361.64])*abs(E1)
@@ -253,6 +283,10 @@ def gen_hop_free(zeta,Blm,sw_ls=True,wsoc_cf=False):
         #print(lsdiag)
 
     # Build crystal-field part H_cf from Stevens operators.
+    # Stevens operators O_k^q are expressed in the (l,m) orbital basis and
+    # multiplied by Blm parameters (B40=A_4^0<r^4>, B60=A_6^0<r^6>, etc.).
+    # Normalization factors (60, 180, /60., *.05) are the standard Stevens
+    # normalizations so that the diagonal elements have integer tabulated values.
     (B40,B60,B20,B66)=Blm
     alpha=0.4 #(B44/(5B40)) if alpha and beta==1 cube
     beta=0.3  #(B64/(21B60))
@@ -421,6 +455,9 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
                 ham_hub[i+ns//2,i]=ham_hub[i,i+ns//2]-J[i,j]*n1[j,j+ns//2]*.5
         ham=ham0+ham_hub
         (eig,uni)=sl.eigh(ham)
+        # Find chemical potential mu by enforcing the fixed electron count ne.
+        # f(mu)=0 is equivalent to Tr[n_Fermi]=ne. Brent's method is robust
+        # for monotone f on [eig_min, eig_max].
         f=lambda mu: ne+.5*(np.tanh(0.5*(eig-mu)/temp)-1.).sum()
         mu=scopt.brentq(f,eig.min(),eig.max())
         #mu=scopt.newton(f,0.5*(eig.min()+eig.max()))
@@ -741,6 +778,11 @@ def main():
 
         #exit()
         eig=(eig-eig[0])*unit
+        # Write eigenstate decomposition to output.txt.
+        # Format per eigenstate:
+        #   line 1: index  energy(eV)
+        #   line 2: [list of |coeff|^2 for basis states with weight>0.5%]  total_weight  n_components
+        #   line 3+: [spin-orbital labels]  (|L|  |S|  |L+S|)
         f=open('output.txt','w')
         for i,ef in enumerate(eigf.T[:eigmax]):
             wfw=np.where(abs(ef)**2>5.0e-3)[0]

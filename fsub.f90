@@ -202,6 +202,10 @@ contains
   ! spherical harmonic basis, using the Slater-Condon-Shortley convention.
   ! m1,m2 are creation operator orbital indices; m3,m4 are annihilation operator indices.
   ! Note: lmax, F, and cp are accessed from the host subroutine scope.
+  !
+  ! The loop runs i=1..lmax+1 corresponding to k=0,2,...,2*lmax (even k only),
+  ! because odd-k Gaunt coefficients vanish for same-l matrix elements.
+  ! The (-1)^|m1-m3| phase implements the Condon-Shortley phase convention.
   real(real64) function G(m1,m2,m3,m4)
     implicit none
     integer(int64),intent(in):: m1,m2,m3,m4

@@ -82,7 +82,13 @@ def gencp(int p,int l,int m):
 
 def UJ(cnp.ndarray[cnp.float64_t,ndim=1] F,int l=3):
     """
-    generate onsite interaction U,J
+    Compute Kanamori Coulomb (U) and exchange (J) matrices from Slater integrals.
+
+    U[m1,m2] = sum_k F^k * c^k(m1,m1) * c^k(m2,m2)   (direct integral)
+    J[m1,m2] = sum_k F^k * c^k(m1,m2)^2               (exchange integral)
+
+    The diagonal of J is set to zero because self-exchange is not physical;
+    the on-site U diagonal is absorbed into the chemical potential.
     """
     # Compute direct (U) and exchange (J) matrices from Slater integrals and Gaunt coefficients.
     cdef long m1,m2,i,j,lmax=2*l+1
@@ -98,7 +104,9 @@ def UJ(cnp.ndarray[cnp.float64_t,ndim=1] F,int l=3):
     return U,J
 
 def get_dU(double F0,int l=3):
-    # Compute the F0-only (monopole) contribution used as the dU correction.
+    # Compute dU[m1,m2] = F0p * c^0(m1,m1) * c^0(m2,m2).
+    # This is the monopole (k=0) correction applied when the bare F0 in get_HF_full
+    # differs from the QSGW double-counting correction F0p (see ham_conv in dia.py).
     cdef long m1,m2,i,j,lmax=2*l+1
     cdef cnp.ndarray[cnp.float64_t,ndim=2] dU
     cdef cnp.ndarray[cnp.float64_t,ndim=3] cp
@@ -122,7 +130,10 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
     eigmax: maximum value of eigenvalues to be considered
     lmax: maximum angular momentum of one body electron
     """
-    # Build L/S ladder operators in many-body basis, then project J/L/S observables to eigenspace.
+    # Build many-body L+/L-/S+/S- ladder operators by scanning all pairs of Slater
+    # determinants that differ by exactly one spin-orbital flip, then project
+    # the resulting J^2, L^2, S^2 operators to the eigenspace of the Hamiltonian.
+    # Lz0/Sz0 are diagonal (no off-diagonal contributions for Lz/Sz).
     cdef long i,j,k,spp_flag,spm_flag,lp_flag,lm_flag,lz,tmp
     cdef double lpnum,lmnum,upsign,dnsign
     cdef cnp.ndarray[cnp.complex128_t,ndim=2] Jx,Jy,Jz
@@ -202,10 +213,13 @@ def get_J(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex128_
                             spm_flag=0
                     if (spp_flag+spm_flag+lp_flag+lm_flag)==0:
                         break
+    # Lz0[i] = sum of m_l over occupied orbitals in Slater determinant i.
+    # Sz0[i] = sum of m_s (±1/2) over occupied orbitals.
     Lz0=np.array([a[:,0].sum() for a in sp1[instates]])
     Sz0=np.array([a[:,1].sum() for a in sp1[instates]])
 
-    #obtain J of eigenvalues
+    # J^2 = (L+S)^2 = Jx^2+Jy^2+Jz^2; using Jx=(J++J-)/2, Jy=(J+-J-)/(2i):
+    # J^2 = J+J-/2 + J-J+/2 + Jz^2  (standard relation exploiting [J+,J-]=2Jz)
     Jsq=.25*(Lp0+Lm0+(Sp0+Sm0)).dot(Lp0+Lm0+(Sp0+Sm0))-.25*(Lp0-Lm0+(Sp0-Sm0)).dot(Lp0-Lm0+(Sp0-Sm0))+np.diag(Lz0+.5*Sz0)**2
     Jeig=np.diagonal(uni[:,:eigmax].T.conjugate().dot(Jsq.dot(uni[:,:eigmax]))).real
 
@@ -236,8 +250,13 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     eigmax: maximum value of eigenvalues to be considered
     lorb: maximum angular momentum of one body electron     
     """
-    # Classify eigenstates by LSJ content and construct electric/magnetic dipole transition matrices.
-    #electric dipole_check
+    # Classify eigenstates by LS coupling content and compute electric/magnetic
+    # dipole transition matrices in three steps:
+    #   1. Diagonalize L^2 in the Slater-det basis -> L quantum numbers (L_size)
+    #   2. Within each L block, diagonalize S^2 -> S quantum numbers (S_size)
+    #   3. Within each LS block, diagonalize Lz or J^2 -> Mj or J quantum numbers
+    # This hierarchical diagonalization extracts good L,S,J labels for each eigenstate.
+    #electric dipole check
     cdef long i,j,l,l1,li,lj,j0,J,miz,mjz
     cdef cnp.ndarray[cnp.int64_t] ist,jst
     cdef cnp.ndarray[cnp.int64_t,ndim=1] Lz0
@@ -379,7 +398,7 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     cdef long eig_int_max=(np.where(eig<=2.*erange+eig[0])[0]).size
     cdef cnp.ndarray[cnp.float64_t,ndim=1] chi,chi2,dfunc,deig,wlen=np.linspace(0,erange,wmesh)
 
-    rsq=0.4376**2
+    rsq=0.4376**2  # squared radial matrix element <f|r|d> in atomic units (sets overall intensity scale)
     mnn2,mnn,mnn3,Jeig,Jcolor=gen_spec(wf,nwf,eigf,instates,sp1,eig_int_max,lorb,JRGB)
     arrows=[]
     for i,mn in enumerate(mnn):
@@ -664,6 +683,15 @@ def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.fl
     return(ham)
 
 def get_rdf(eig,uni,wf,nwf,eig_df,uni_df,wfdf,nwfdf,eigmax,tdf,rdf,edf):
+    """
+    Build d-f transition amplitudes between the f^n ground manifold and f^(n±1) intermediate states.
+
+    tdf/rdf (input): single-orbital transition amplitudes indexed by spin-orbital index.
+    Pairs of Slater determinants that differ by exactly one occupied orbital (dwf.sum()==1)
+    are connected; the amplitude is looked up from the single-orbital arrays by that index.
+    ediff[i,j] = 1 / (eig[i] - eig_df[j] - edf) is the energy denominator for the
+    virtual intermediate state j (sign of edf distinguishes emission/absorption branch).
+    """
     # Build transition operators between f^n and f^(n±1) spaces and associated energy denominators.
     tdf0=np.zeros((nwf,nwfdf))
     rdf0=np.zeros((nwf,nwfdf))
