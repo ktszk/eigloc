@@ -190,8 +190,7 @@ def handle_plot(save_name=None):
         fig.savefig(os.path.join(plot_out_dir,save_name),dpi=plot_dpi,bbox_inches='tight')
     if sw_plot_mode in {'show','both'}:
         plt.show()
-    else:
-        plt.close(fig)
+    plt.close(fig)
 
 def get_F(F_type:int,E0:float,E1:float,E2:float,E3:float):
     """
@@ -452,7 +451,7 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
                 ham_hub[j,i]=ham_hub[i,j].conjugate()
                 ham_hub[j+ns//2,i+ns//2]=ham_hub[i+ns//2,j+ns//2].conjugate()
                 ham_hub[i,i+ns//2]=ham_hub[i,i+ns//2]-J[i,j]*n1[j+ns//2,j]*.5
-                ham_hub[i+ns//2,i]=ham_hub[i,i+ns//2]-J[i,j]*n1[j,j+ns//2]*.5
+                ham_hub[i+ns//2,i]=ham_hub[i,i+ns//2].conjugate()
         ham=ham0+ham_hub
         (eig,uni)=sl.eigh(ham)
         # Find chemical potential mu by enforcing the fixed electron count ne.

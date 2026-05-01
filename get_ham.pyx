@@ -3,7 +3,7 @@
 import numpy as np
 cimport cython
 cimport numpy as cnp
-from ctypes import *
+from ctypes import c_int64, c_void_p, POINTER, byref
 import os
 import sympy as syp
 from sympy.physics.wigner import gaunt
@@ -27,7 +27,9 @@ def _get_fsub_get_ham():
     # Cache the ctypes function object to avoid repeated dlopen/argtypes setup.
     global _fsub_lib, _fsub_get_ham
     if _fsub_get_ham is None:
-        _fsub_lib = np.ctypeslib.load_library("fsub.so", ".")
+        import pathlib
+        _lib_dir = str(pathlib.Path(__file__).parent)
+        _fsub_lib = np.ctypeslib.load_library("fsub.so", _lib_dir)
         _fsub_get_ham = _fsub_lib.get_ham
         _fsub_get_ham.argtypes = [np.ctypeslib.ndpointer(dtype=np.complex128), #ham
                                   np.ctypeslib.ndpointer(dtype=np.int64), #wf
@@ -582,7 +584,7 @@ def get_HF_full(int ns, int ne, init_n, ham0, cnp.ndarray[cnp.float64_t,ndim=2] 
 
 def get_ham_spa(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
             cnp.ndarray[cnp.float64_t,ndim=2] J, int ns, cnp.ndarray[cnp.float64_t,ndim=1] F,
-            int l=3,sw_all_g=True,spa_type='crs'):
+            int l=3,sw_all_g=True,spa_type='csr'):
     """
     get many-body hamiltonian
     """
@@ -663,7 +665,7 @@ def get_ham_spa(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cn
 
 def get_ham(cnp.ndarray[cnp.int64_t,ndim=2] wf, hop, int nwf, cnp.ndarray[cnp.float64_t,ndim=2] U,
            cnp.ndarray[cnp.float64_t,ndim=2] J, int ns, cnp.ndarray[cnp.float64_t,ndim=1] F,
-           int l=3,sw_all_g=True):
+           int l=3):
     """
     get many-body hamiltonian
     """

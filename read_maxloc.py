@@ -35,7 +35,7 @@ def gen_uni(no):
 unid=gen_uni(5)
 unif=gen_uni(7)
 
-ru=np.zeros((no,no),dtype=np.complex)
+ru=np.zeros((no,no),dtype=np.complex128)
 for ((i,j),tp) in zip(tmp0[:lenup],tmp):
     ru[i-1,j-1]=tp[0]+1j*tp[1]+tp[2]+1j*tp[3]+tp[4]+1j*tp[5]
     #rxu[i-1,j-1]=tp[0]+1j*tp[1]
@@ -46,7 +46,7 @@ for ((i,j),tp) in zip(tmp0[:lenup],tmp):
 #rzd=np.zeros((no,no),dtype=np.complex)
 ruorb=unid.dot((ru[:5,5:]).dot(unif.T.conjugate()))
 
-rd=np.zeros((no,no),dtype=np.complex)
+rd=np.zeros((no,no),dtype=np.complex128)
 for ((i,j),tp) in zip(tmp0[lenup:],tmp[lenup:]):
     rd[i-1,j-1]=tp[0]+1j*tp[1]+tp[2]+1j*tp[3]+tp[4]+1j*tp[5]
     #rxd[i-1,j-1]=tp[0]+1j*tp[1]
