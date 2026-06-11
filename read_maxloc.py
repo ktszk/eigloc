@@ -58,8 +58,8 @@ hamdf_u=unid.dot((hamu[:5,5:]).dot(unif.T.conjugate()))
 hamdf_d=unid.dot((hamd[:5,5:]).dot(unif.T.conjugate()))
 
 
-rdf=np.concatenate([ruorb.sum(axis=0),rdorb.mean(axis=0)])
-hdf=np.concatenate([hamdf_u.sum(axis=0),hamdf_d.mean(axis=0)])
+rdf=np.concatenate([ruorb.mean(axis=0),rdorb.mean(axis=0)])
+hdf=np.concatenate([hamdf_u.mean(axis=0),hamdf_d.mean(axis=0)])
 print(rdf)
 print(hdf)
 

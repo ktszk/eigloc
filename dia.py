@@ -228,8 +228,8 @@ def gen_hop():
     """
     def import_Hopping(fname:str):
         tmp=[f.split() for f in open(fname,'r')]
-        tmp=sc.array([complex(float(tp[8]),float(tp[9])) for tp in tmp])
-        ham_r=sc.reshape(tmp,(ns//2,ns//2))
+        tmp=np.array([complex(float(tp[8]),float(tp[9])) for tp in tmp])
+        ham_r=np.reshape(tmp,(ns//2,ns//2))
         return(ham_r)
 
     hopu=import_Hopping('hopu.dat')
@@ -438,7 +438,10 @@ def get_HF(ham0,U,J,temp=1.0e-9,eps=1.0e-6,itemax=1000,switch=True):
     n1=np.diag(ini_n)
     # Self-consistent Hartree-Fock loop for the one-body density matrix n1.
     for k in range(itemax):
-        ham_hub=np.zeros((ns,ns))
+        # complex dtype: off-diagonal terms below take complex n1 elements
+        # after the first iteration (assigning complex into a float array
+        # raises TypeError on NumPy>=2)
+        ham_hub=np.zeros((ns,ns),dtype='c16')
         for i in range(ns//2):
             ham_hub[i,i]=((U[i,:]*n1.diagonal()[ns//2:]).sum()
                           +np.delete((U[i,:]-J[i,:])*n1.diagonal()[:ns//2],i).sum())
@@ -570,8 +573,10 @@ def plot_TS(U,J,F,nwf,wf,dqmax=5,dqlen=100,mem_enough=False):
         RB=918/eV2cm
         RC=4133/eV2cm
     else:
-        RB=5.*F[2]/63.
-        RC=(9.*F[1]-5*F[2])/441.
+        # Racah parameters from Slater integrals (F[1]=F^2, F[2]=F^4):
+        # B=(9F^2-5F^4)/441, C=5F^4/63
+        RB=(9.*F[1]-5.*F[2])/441.
+        RC=5.*F[2]/63.
     dq=np.linspace(0,dqmax,dqlen)
     # Sweep crystal-field strength and track many-body eigenvalue evolution.
     hop=np.array([gen_hop_free(zeta,(dqq,0,0,0),wsoc_cf=sw_cfsoc) for dqq in dq])
@@ -600,7 +605,7 @@ def plot_dd():
             ne=j+1
             nwf=scsp.comb(ns,ne,exact=True)
             instates=np.array(list(itts.combinations(range(ns),ne)))
-            wf=np.zeros((nwf,ns),dtype=int)
+            wf=np.zeros((nwf,ns),dtype=np.int64)
             for i,ist in enumerate(instates):
                 wf[i][ist]=1
             F=get_F(sw_F_type,10,f2,0,0)
@@ -656,7 +661,7 @@ def main():
                 Blm=(0,0,0,0)
         nwf=scsp.comb(ns,ne,exact=True)
         instates=np.array(list(itts.combinations(range(ns),ne)))
-        wf=np.zeros((nwf,ns),dtype=int)
+        wf=np.zeros((nwf,ns),dtype=np.int64)
         for i,ist in enumerate(instates):
             wf[i][ist]=1
         U,J=get_ham.UJ(F,lorb)
@@ -682,7 +687,10 @@ def main():
         if sw_spa:
             # Sparse construction + partial eigensolver for low-energy states only.
             ham=get_ham.get_ham_spa(wf,hop,nwf,U,J,ns,F,l=lorb,spa_type='csr')
-            eig,eigf=ssl.eigsh(ham,k=num_eig,which='SM')
+            # 'SA' (smallest algebraic) selects the lowest-energy states;
+            # 'SM' (smallest magnitude) would miss the ground state when
+            # the spectrum contains negative eigenvalues
+            eig,eigf=ssl.eigsh(ham,k=num_eig,which='SA')
             sarg=np.argsort(eig)
             eig=eig[sarg]
             eigf=(eigf.T[sarg]).T
@@ -703,11 +711,11 @@ def main():
             else:
                 tdf=1.e-4*np.ones(14)
                 rdf=1.e-1*np.ones(14)
+            edf=12.0
             if ne!=ns:
-                edf=12.0
                 nwfp=scsp.comb(ns,ne+1,exact=True)
                 instatesp=np.array(list(itts.combinations(range(ns),ne+1)))
-                wfp=np.zeros((nwfp,ns),dtype=int)
+                wfp=np.zeros((nwfp,ns),dtype=np.int64)
                 for i,ist in enumerate(instatesp):
                     wfp[i][ist]=1
                 ham_p=get_ham.get_ham(wfp,hop,nwfp,U,J,ns,F,l=lorb)
@@ -716,7 +724,7 @@ def main():
             if ne!=0:
                 nwfm=scsp.comb(ns,ne-1,exact=True)
                 instatesm=np.array(list(itts.combinations(range(ns),ne-1)))
-                wfm=np.zeros((nwfm,ns),dtype=int)
+                wfm=np.zeros((nwfm,ns),dtype=np.int64)
                 for i,ist in enumerate(instatesm):
                     wfm[i][ist]=1
                 ham_m=get_ham.get_ham(wfm,hop,nwfm,U,J,ns,F,l=lorb)
@@ -738,7 +746,7 @@ def main():
             spect=[-(abs(spdf)*dfunc/(iw+deig)).sum().imag for iw in wlen]
             #spect=[-(abs(spdf)/(iw+deig)).sum().imag for iw in wlen]
             #spect[0]=0
-            plt.plot(wlen,spect)
+            plt.plot(wlen.real,spect)
             #plt.imshow(spdf.real,cmap=plt.cm.jet,interpolation='nearest')
             #plt.colorbar()
             handle_plot('df_spectrum.png')

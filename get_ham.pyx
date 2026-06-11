@@ -333,7 +333,7 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
     uni_lls=uni_ls.dot(rot_mat)
     uni_J=uni_ls.dot(rot_J)
 
-    RSuni=abs(uni[:,:eigmax].T.dot(uni_J))**2
+    RSuni=abs(uni[:,:eigmax].T.conjugate().dot(uni_J))**2
     Lu=np.unique(L_size)
     Su=np.unique(S_size)
     Ju=np.unique(J_size)
@@ -371,9 +371,11 @@ def gen_spec(cnp.ndarray[cnp.int64_t,ndim=2] wf,int nwf,cnp.ndarray[cnp.complex1
         for j0, (lj,mjz,sj) in enumerate(zip(L_size[i:],Lz_size[i:],S_size[i:])):
             if abs(si-sj)<1e-3 and abs(li-lj)==1:
                 j=j0+i
-                rp_mat[i,j]=complex(gaunt(lj,1,li,miz,1,mjz))
-                rm_mat[i,j]=complex(gaunt(lj,1,li,miz,-1,mjz))
-                rz_mat[i,j]=complex(gaunt(lj,1,li,miz,0,mjz))
+                # <L_i M_i|Y_1q|L_j M_j> = (-1)^M_i * Gaunt(L_i,1,L_j; -M_i,q,M_j),
+                # nonzero only when M_i = M_j + q (dipole selection rule)
+                rp_mat[i,j]=complex((-1)**abs(miz)*gaunt(li,1,lj,-miz,1,mjz))
+                rm_mat[i,j]=complex((-1)**abs(miz)*gaunt(li,1,lj,-miz,-1,mjz))
+                rz_mat[i,j]=complex((-1)**abs(miz)*gaunt(li,1,lj,-miz,0,mjz))
                 rp_mat[j,i]=-rm_mat[i,j].conjugate()
                 rm_mat[j,i]=-rp_mat[i,j].conjugate()
                 rz_mat[j,i]=rz_mat[i,j].conjugate()
@@ -434,16 +436,17 @@ def get_spectrum(int nwf,cnp.ndarray[cnp.int64_t,ndim=2] wf,cnp.ndarray[cnp.floa
     wl,el=np.meshgrid(warray,eig[:eig_int_max]-eig[0])
     we_uni=id/((wl-el)**2+id**2)
     pmap=we_uni.T.dot((mnn+mnn2).dot(we_uni))
-    maps=ax21.contourf(wl,wl.T,pmap,levels=100,cmap=plt.cm.jet,interpolation='nearest')
+    maps=ax21.contourf(wl,wl.T,pmap,levels=100,cmap=plt.cm.jet)
     fig.colorbar(maps,ax=ax21)
     ax22=fig.add_subplot(324)
     pmap=we_uni.T.dot((mnn3+mnn2).dot(we_uni))
-    maps=ax22.contourf(wl,wl.T,pmap,levels=100,cmap=plt.cm.jet,interpolation='nearest')
+    maps=ax22.contourf(wl,wl.T,pmap,levels=100,cmap=plt.cm.jet)
     fig.colorbar(maps,ax=ax22)
 
     ax3=fig.add_subplot(313)
     ax3.plot(range(eig_int_max),mnn[0,:])
     fig.savefig('mnn_map.png')
+    plt.close(fig)
 
     mnn3=mnn3.flatten()
     mnn2=mnn2.flatten()
@@ -695,15 +698,21 @@ def get_rdf(eig,uni,wf,nwf,eig_df,uni_df,wfdf,nwfdf,eigmax,tdf,rdf,edf):
     virtual intermediate state j (sign of edf distinguishes emission/absorption branch).
     """
     # Build transition operators between f^n and f^(n±1) spaces and associated energy denominators.
-    tdf0=np.zeros((nwf,nwfdf))
-    rdf0=np.zeros((nwf,nwfdf))
+    # complex dtype: tdf/rdf amplitudes from rta.json are complex
+    tdf0=np.zeros((nwf,nwfdf),dtype='c16')
+    rdf0=np.zeros((nwf,nwfdf),dtype='c16')
     ediff=np.zeros((eigmax,nwfdf))
     for i in range(nwf):
         for j in range(nwfdf):
             dwf=abs(wf[i]-wfdf[j])
             if dwf.sum()==1:
-                rdf0[i,j]=rdf[np.where(dwf!=0)[0][0]]
-                tdf0[i,j]=tdf[np.where(dwf!=0)[0][0]]
+                k=np.where(dwf!=0)[0][0]
+                # fermionic (Jordan-Wigner) sign of the single c^+_k/c_k:
+                # (-1)^(occupied orbitals below k); both determinants
+                # coincide below k, so either occupation vector works
+                sgn=(-1)**int(wf[i][:k].sum())
+                rdf0[i,j]=sgn*rdf[k]
+                tdf0[i,j]=sgn*tdf[k]
             else:
                 pass
     tdf=uni[:,:eigmax].T.conjugate().dot(tdf0.dot(uni_df))
